@@ -120,7 +120,9 @@ async function sessionAuth(name, opts) {
   const result = await runAuthFlow(name, opts.url, {
     successUrl: opts.successUrl,
     successSelector: opts.successSelector,
-    timeout: opts.timeout ? parseInt(opts.timeout, 10) : undefined
+    timeout: opts.timeout ? parseInt(opts.timeout, 10) : undefined,
+    vnc: !!opts.vnc,
+    port: opts.port ? parseInt(opts.port, 10) : undefined
   });
 
   output({ command: 'session auth', ...result });

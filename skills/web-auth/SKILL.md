@@ -2,7 +2,7 @@
 name: web-auth
 description: "Authenticate to websites with human-in-the-loop browser handoff. Use when user needs to log into a website, complete 2FA, or solve CAPTCHAs for agent access."
 version: 1.0.0
-argument-hint: "[session-name] --url [login-url] [--success-url [url]] [--timeout [seconds]]"
+argument-hint: "[session-name] --url [login-url] [--success-url [url]] [--timeout [seconds]] [--vnc]"
 ---
 
 # Web Auth Skill
@@ -35,9 +35,18 @@ If the session already exists, skip this step.
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <session-name> --url <login-url> [--success-url <url>] [--success-selector <selector>] [--timeout <seconds>]
 ```
 
-This opens a **headed browser window** on the user's machine. Tell the user:
+**Display auto-detection**: If a local display is available, this opens a headed browser window. On remote servers (no display), it automatically falls back to VNC mode - launching Chrome in a virtual framebuffer with a noVNC web viewer.
 
-> A browser window has opened at <login-url>. Please complete the login process there. The window will close automatically when authentication is detected.
+Use `--vnc` to force VNC mode. Requires: `Xvfb`, `x11vnc`, `websockify`, `novnc`.
+
+**Headed mode** (local display):
+> A browser window has opened at <login-url>. Please complete the login process there.
+
+**VNC mode** (remote/headless):
+The command outputs a `vncUrl` - tell the user to open it in their browser to interact with the remote Chrome. If on a private network, they need to forward the port first:
+```
+ssh -L <port>:localhost:<port> <server>
+```
 
 ### 3. Parse Result
 
@@ -46,7 +55,9 @@ The command returns JSON:
 - `{ "ok": true, "session": "name", "url": "..." }` - Auth successful, session saved
 - `{ "ok": false, "error": "auth_timeout" }` - User did not complete auth in time
 - `{ "ok": false, "error": "auth_error", "message": "..." }` - Something went wrong
+- `{ "ok": false, "error": "no_display" }` - No display and VNC deps not installed
 - `{ "captchaDetected": true }` - CAPTCHA was detected during auth
+- `{ "vncUrl": "http://..." }` - VNC mode: URL for user to authenticate through
 
 ### 4. Handle Failures
 
