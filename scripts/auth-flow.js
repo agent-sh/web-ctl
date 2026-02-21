@@ -83,11 +83,22 @@ async function runAuthFlow(sessionName, url, options = {}) {
       if (options.successSelector) {
         const el = await page.$(options.successSelector);
         if (el) {
-          const currentUrl = page.url();
-          await closeBrowser(sessionName, context);
-          sessionStore.updateSession(sessionName, { status: 'authenticated' });
-          sessionStore.unlockSession(sessionName);
-          return { ok: true, session: sessionName, url: currentUrl };
+          // For attribute selectors, verify the attribute has a non-empty value
+          const isValid = await el.evaluate(node => {
+            // Check common auth indicators - meta tags with content, visible elements
+            if (node.tagName === 'META' && node.hasAttribute('content')) {
+              return node.getAttribute('content').trim().length > 0;
+            }
+            return true;
+          }).catch(() => false);
+
+          if (isValid) {
+            const currentUrl = page.url();
+            await closeBrowser(sessionName, context);
+            sessionStore.updateSession(sessionName, { status: 'authenticated' });
+            sessionStore.unlockSession(sessionName);
+            return { ok: true, session: sessionName, url: currentUrl };
+          }
         }
       }
 

@@ -88,12 +88,6 @@ async function launchBrowser(sessionName, options = {}) {
     }
   }
 
-  // Restore storage state if available
-  const storageState = sessionStore.loadStorageState(sessionName);
-  if (storageState) {
-    launchOptions.storageState = storageState;
-  }
-
   // Try system Chrome first, fall back to Playwright bundled Chromium
   let context;
   try {
@@ -102,6 +96,12 @@ async function launchBrowser(sessionName, options = {}) {
   } catch {
     delete launchOptions.channel;
     context = await chromium.launchPersistentContext(profileDir, launchOptions);
+  }
+
+  // Restore cookies after launch (storageState option is ignored for persistent contexts)
+  const storageState = sessionStore.loadStorageState(sessionName);
+  if (storageState && storageState.cookies && storageState.cookies.length > 0) {
+    await context.addCookies(storageState.cookies);
   }
 
   // Anti-bot init script on all pages
