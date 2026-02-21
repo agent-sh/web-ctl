@@ -1,0 +1,5 @@
+{
+  "agents": ["web-session"],
+  "skills": ["web-auth", "web-browse"],
+  "commands": ["web-ctl"]
+}
