@@ -450,9 +450,7 @@ async function main() {
     const sessionName = args[1];
     const action = args[2];
     const opts = parseOptions(args.slice(3));
-    const actionArgs = args.slice(3).filter(a => !a.startsWith('--') && (args.indexOf(a) === args.lastIndexOf(a) || !args[args.indexOf(a) - 1]?.startsWith('--')));
-
-    // Simpler arg extraction: non-option args after action
+    // Extract non-option args after action
     const cleanArgs = [];
     for (let i = 3; i < args.length; i++) {
       if (args[i].startsWith('--')) {
