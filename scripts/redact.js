@@ -35,6 +35,9 @@ function sanitizeWebContent(html) {
     text = text.slice(0, CONTENT_LIMIT) + '... [TRUNCATED]';
   }
 
+  // Escape delimiter pattern to prevent injection outside content boundaries
+  text = text.replace(/\[PAGE_CONTENT:/g, '[PAGE\u200B_CONTENT:');
+
   return '[PAGE_CONTENT: ' + text + ']';
 }
 
@@ -59,6 +62,14 @@ function redactSecrets(text) {
 
   // Redact Authorization header values
   result = result.replace(/(Authorization:\s*)[^\n]+/gi, '$1[REDACTED]');
+
+  // Redact URL-embedded credentials
+  result = result.replace(/(api[_-]?key[=:]\s*)[A-Za-z0-9\-._]{8,}/gi, '$1[REDACTED]');
+  result = result.replace(/(access[_-]?token[=:]\s*)[A-Za-z0-9\-._]{8,}/gi, '$1[REDACTED]');
+  result = result.replace(/(secret[=:]\s*)[A-Za-z0-9\-._]{8,}/gi, '$1[REDACTED]');
+  result = result.replace(/(password[=:]\s*)[^\s&]{4,}/gi, '$1[REDACTED]');
+  // Redact basic auth in URLs (user:pass@host)
+  result = result.replace(/:\/\/([^:]+):([^@]{4,})@/g, '://[REDACTED]:[REDACTED]@');
 
   return result;
 }

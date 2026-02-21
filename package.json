@@ -6,7 +6,7 @@
     "web-ctl": "scripts/web-ctl.js"
   },
   "scripts": {
-    "test": "node --test tests/"
+    "test": "node --test tests/*.test.js"
   },
   "peerDependencies": {
     "playwright": ">=1.40.0"

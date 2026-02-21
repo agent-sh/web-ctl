@@ -126,6 +126,20 @@ describe('saveStorageState / loadStorageState', () => {
     assert.equal(store.loadStorageState('noenc'), null);
   });
 
+  it('rejects tampered ciphertext (GCM auth tag mismatch)', () => {
+    const store = getStore();
+    store.createSession('tampered');
+    store.saveStorageState('tampered', { cookies: [{ name: 'a' }] });
+
+    // Corrupt a byte in storage.enc
+    const encPath = path.join(store.getSessionDir('tampered'), 'storage.enc');
+    const data = fs.readFileSync(encPath);
+    data[data.length - 1] ^= 0xff; // flip last byte
+    fs.writeFileSync(encPath, data);
+
+    assert.throws(() => store.loadStorageState('tampered'));
+  });
+
   it('updates metadata with cookie count and domain', () => {
     const store = getStore();
     store.createSession('meta');
@@ -161,6 +175,17 @@ describe('lockSession / unlockSession', () => {
     store.lockSession('locked');
     assert.throws(() => store.lockSession('locked'), /is locked/);
     store.unlockSession('locked');
+  });
+
+  it('cleans up stale lock from non-existent process', () => {
+    const store = getStore();
+    store.createSession('stale');
+    // Write a lock file with a PID that doesn't exist
+    const lockPath = path.join(store.getSessionDir('stale'), 'session.lock');
+    fs.writeFileSync(lockPath, '999999999');
+    // Should succeed — stale lock is cleaned
+    store.lockSession('stale');
+    store.unlockSession('stale');
   });
 });
 

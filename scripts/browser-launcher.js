@@ -1,7 +1,10 @@
 'use strict';
 
 const fs = require('fs');
+const path = require('path');
 const sessionStore = require('./session-store');
+
+const IN_WSL = isWSL();
 
 /**
  * Detect WSL environment.
@@ -32,10 +35,24 @@ function getWindowsChromePath() {
 }
 
 /**
- * Random delay to mimic human behavior.
+ * Random delay to mimic human behavior (200-800ms).
  */
 function randomDelay() {
   return new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 600));
+}
+
+/**
+ * Remove stale Chrome SingletonLock from profile directory.
+ */
+function cleanSingletonLock(profileDir) {
+  const lockPath = path.join(profileDir, 'SingletonLock');
+  try {
+    if (fs.existsSync(lockPath)) {
+      fs.unlinkSync(lockPath);
+    }
+  } catch {
+    // May fail if locked by active process — that's fine
+  }
 }
 
 /**
@@ -51,6 +68,9 @@ async function launchBrowser(sessionName, options = {}) {
   const profileDir = sessionStore.getProfileDir(sessionName);
   const headless = options.headless !== false;
 
+  // Clean stale Chrome lock that can prevent launch after crash
+  cleanSingletonLock(profileDir);
+
   const launchOptions = {
     headless,
     args: [
@@ -60,15 +80,11 @@ async function launchBrowser(sessionName, options = {}) {
     ]
   };
 
-  // Prefer system Chrome
-  launchOptions.channel = 'chrome';
-
   // WSL: use Windows Chrome executable
-  if (isWSL()) {
+  if (IN_WSL) {
     const chromePath = getWindowsChromePath();
     if (chromePath) {
       launchOptions.executablePath = chromePath;
-      delete launchOptions.channel;
     }
   }
 
@@ -78,7 +94,15 @@ async function launchBrowser(sessionName, options = {}) {
     launchOptions.storageState = storageState;
   }
 
-  const context = await chromium.launchPersistentContext(profileDir, launchOptions);
+  // Try system Chrome first, fall back to Playwright bundled Chromium
+  let context;
+  try {
+    launchOptions.channel = 'chrome';
+    context = await chromium.launchPersistentContext(profileDir, launchOptions);
+  } catch {
+    delete launchOptions.channel;
+    context = await chromium.launchPersistentContext(profileDir, launchOptions);
+  }
 
   // Anti-bot init script on all pages
   await context.addInitScript(() => {
@@ -94,13 +118,15 @@ async function launchBrowser(sessionName, options = {}) {
 
 /**
  * Save storage state and close the browser context.
+ * Returns a warning message if storage state could not be saved.
  */
 async function closeBrowser(sessionName, context) {
+  let warning = null;
   try {
     const state = await context.storageState();
     sessionStore.saveStorageState(sessionName, state);
-  } catch {
-    // May fail if context is already closed
+  } catch (err) {
+    warning = `Storage state not saved: ${err.message}`;
   }
 
   try {
@@ -108,6 +134,8 @@ async function closeBrowser(sessionName, context) {
   } catch {
     // Already closed
   }
+
+  return warning;
 }
 
 module.exports = { launchBrowser, closeBrowser, randomDelay, isWSL };

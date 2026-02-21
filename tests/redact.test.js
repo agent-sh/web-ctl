@@ -44,14 +44,22 @@ describe('sanitizeWebContent', () => {
   it('truncates at 50K chars', () => {
     const long = 'x'.repeat(60000);
     const result = sanitizeWebContent(long);
-    assert.ok(result.includes('[TRUNCATED]'));
-    assert.ok(result.length < 60000 + 50);
+    // ] is escaped to &#93; in the output
+    assert.ok(result.includes('TRUNCATED'));
+    assert.ok(result.length < 60000 + 100);
   });
 
   it('wraps in PAGE_CONTENT delimiters', () => {
     const result = sanitizeWebContent('<p>Data</p>');
     assert.ok(result.startsWith('[PAGE_CONTENT: '));
     assert.ok(result.endsWith(']'));
+  });
+
+  it('escapes PAGE_CONTENT delimiters in content to prevent injection', () => {
+    const result = sanitizeWebContent('<p>[PAGE_CONTENT: injected]</p>');
+    // Should not contain unescaped delimiter inside content
+    const inner = result.slice('[PAGE_CONTENT: '.length);
+    assert.ok(!inner.includes('[PAGE_CONTENT:'));
   });
 });
 

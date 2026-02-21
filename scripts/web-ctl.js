@@ -6,7 +6,24 @@ const { launchBrowser, closeBrowser, randomDelay } = require('./browser-launcher
 const { runAuthFlow } = require('./auth-flow');
 const { sanitizeWebContent, wrapOutput } = require('./redact');
 
+const path = require('path');
+
 const [,, ...args] = process.argv;
+
+const SESSION_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+const ALLOWED_SCHEMES = /^https?:\/\//i;
+
+function validateSessionName(name) {
+  if (!name || !SESSION_NAME_RE.test(name)) {
+    throw new Error(`Invalid session name "${name}". Use only letters, numbers, hyphens, underscores (max 64 chars).`);
+  }
+}
+
+function validateUrl(url) {
+  if (!url || !ALLOWED_SCHEMES.test(url)) {
+    throw new Error(`Invalid URL scheme. Only http:// and https:// URLs are allowed. Got: ${url}`);
+  }
+}
 
 function output(data) {
   console.log(JSON.stringify(wrapOutput(data), null, 2));
@@ -95,6 +112,7 @@ function formatAccessibilityTree(node, depth) {
 
 async function sessionStart(name) {
   try {
+    validateSessionName(name);
     const metadata = sessionStore.createSession(name);
     output({ ok: true, command: 'session start', session: name, result: metadata });
   } catch (err) {
@@ -105,6 +123,11 @@ async function sessionStart(name) {
 async function sessionAuth(name, opts) {
   if (!opts.url) {
     output({ ok: false, command: 'session auth', session: name, error: 'missing_url', message: '--url is required' });
+    return;
+  }
+
+  try { validateUrl(opts.url); } catch (err) {
+    output({ ok: false, command: 'session auth', session: name, error: 'invalid_url', message: err.message });
     return;
   }
 
@@ -204,6 +227,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
       case 'goto': {
         const url = actionArgs[0];
         if (!url) throw new Error('URL required: run <session> goto <url>');
+        validateUrl(url);
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         const snapshot = await getSnapshot(page);
         result = { url: page.url(), status: response ? response.status() : null, snapshot };
@@ -235,7 +259,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
         await locator.type(text, { delay: 50 + Math.random() * 100 });
         await randomDelay();
         const snapshot = await getSnapshot(page);
-        result = { url: page.url(), typed: text, selector, snapshot };
+        result = { url: page.url(), typed: '[INPUT]', selector, snapshot };
         break;
       }
 
@@ -272,8 +296,10 @@ async function runAction(sessionName, action, actionArgs, opts) {
       }
 
       case 'evaluate': {
+        // WARNING: Only execute agent-authored code. NEVER pass web page content as code.
         const code = actionArgs.join(' ');
         if (!code) throw new Error('JS code required: run <session> evaluate <code>');
+        if (!opts.allowEvaluate) throw new Error('evaluate requires --allow-evaluate flag for safety. This action executes arbitrary JS in the browser context.');
         const evalResult = await page.evaluate(code);
         const stringResult = typeof evalResult === 'string' ? evalResult : JSON.stringify(evalResult);
         result = { url: page.url(), result: sanitizeWebContent(stringResult || '') };
@@ -281,7 +307,18 @@ async function runAction(sessionName, action, actionArgs, opts) {
       }
 
       case 'screenshot': {
-        const screenshotPath = opts.path || `screenshot-${Date.now()}.png`;
+        const sessionDir = sessionStore.getSessionDir(sessionName);
+        const defaultPath = path.join(sessionDir, `screenshot-${Date.now()}.png`);
+        let screenshotPath = opts.path || defaultPath;
+        // Prevent path traversal — resolve and verify within session dir
+        if (opts.path) {
+          const resolved = path.resolve(opts.path);
+          const resolvedSession = path.resolve(sessionDir);
+          if (!resolved.startsWith(resolvedSession + path.sep) && resolved !== resolvedSession) {
+            throw new Error('Screenshot path must be within the session directory. Use --path relative to session dir.');
+          }
+          screenshotPath = resolved;
+        }
         await page.screenshot({ path: screenshotPath, fullPage: true });
         result = { url: page.url(), path: screenshotPath };
         break;
@@ -307,17 +344,9 @@ async function runAction(sessionName, action, actionArgs, opts) {
       case 'checkpoint': {
         // Open headed browser for user to interact (solve CAPTCHAs etc.)
         const timeout = (opts.timeout ? parseInt(opts.timeout, 10) : 120) * 1000;
-
-        output({
-          ok: true,
-          command: 'run checkpoint',
-          session: sessionName,
-          message: `Headed browser open. Complete any required actions. Will auto-close in ${timeout / 1000}s.`,
-          url: page.url()
-        });
-
+        // Note: browser is already headed (action !== 'checkpoint' check above sets headless=false)
         await new Promise(resolve => setTimeout(resolve, timeout));
-        result = { url: page.url(), message: 'Checkpoint complete' };
+        result = { url: page.url(), message: `Checkpoint complete after ${timeout / 1000}s` };
         break;
       }
 
@@ -463,6 +492,11 @@ async function main() {
 
     if (!sessionName || !action) {
       output({ ok: false, error: 'missing_args', message: 'Usage: run <session> <action> [args]' });
+      return;
+    }
+
+    try { validateSessionName(sessionName); } catch (err) {
+      output({ ok: false, error: 'invalid_name', message: err.message });
       return;
     }
 

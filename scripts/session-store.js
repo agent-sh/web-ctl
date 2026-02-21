@@ -23,7 +23,7 @@ function getMasterKeyPath() {
 }
 
 function ensureDir(dir, mode) {
-  fs.mkdirSync(dir, { recursive: true, mode: mode || 0o755 });
+  fs.mkdirSync(dir, { recursive: true, mode: mode || 0o700 });
 }
 
 /**
@@ -34,7 +34,11 @@ function getMasterKey() {
   ensureDir(path.dirname(keyPath));
 
   if (fs.existsSync(keyPath)) {
-    return Buffer.from(fs.readFileSync(keyPath, 'utf8'), 'hex');
+    const key = Buffer.from(fs.readFileSync(keyPath, 'utf8'), 'hex');
+    if (key.length !== 32) {
+      throw new Error('Master key file is corrupt: expected 32 bytes. Delete ' + keyPath + ' to regenerate.');
+    }
+    return key;
   }
 
   const key = crypto.randomBytes(32);
@@ -46,7 +50,7 @@ function getMasterKey() {
  * Derive a per-session encryption key using HKDF.
  */
 function deriveSessionKey(masterKey, sessionName) {
-  return crypto.hkdfSync('sha256', masterKey, '', sessionName, 32);
+  return crypto.hkdfSync('sha256', masterKey, 'web-ctl-session-v1', sessionName, 32);
 }
 
 /**
@@ -200,24 +204,35 @@ function lockSession(name) {
   const lockPath = path.join(getSessionDir(name), 'session.lock');
   const pid = process.pid.toString();
 
-  // Check for stale lock
-  if (fs.existsSync(lockPath)) {
-    const existingPid = fs.readFileSync(lockPath, 'utf8').trim();
-    try {
-      process.kill(parseInt(existingPid, 10), 0);
-      // Process exists, lock is active
-      throw new Error(`Session "${name}" is locked by process ${existingPid}`);
-    } catch (e) {
-      if (e.code === 'ESRCH') {
-        // Stale lock, remove it
-        fs.unlinkSync(lockPath);
-      } else if (e.message.includes('is locked')) {
-        throw e;
+  try {
+    // Atomic lock creation — fails if file already exists
+    const fd = fs.openSync(lockPath, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
+    fs.writeSync(fd, pid);
+    fs.closeSync(fd);
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      // Lock file exists — check if stale
+      const existingPid = fs.readFileSync(lockPath, 'utf8').trim();
+      try {
+        process.kill(parseInt(existingPid, 10), 0);
+        // Process exists, lock is active
+        throw new Error(`Session "${name}" is locked by process ${existingPid}`);
+      } catch (killErr) {
+        if (killErr.code === 'ESRCH') {
+          // Stale lock (process gone), remove and retry
+          fs.unlinkSync(lockPath);
+          return lockSession(name);
+        } else if (killErr.code === 'EPERM') {
+          // Process exists but owned by another user — treat as active lock
+          throw new Error(`Session "${name}" is locked by process ${existingPid}`);
+        }
+        throw killErr;
       }
+    } else if (e.code === 'ENOENT') {
+      throw new Error(`Session "${name}" not found`);
     }
+    throw e;
   }
-
-  fs.writeFileSync(lockPath, pid);
 }
 
 /**
