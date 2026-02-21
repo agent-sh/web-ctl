@@ -1,7 +1,8 @@
 'use strict';
 
-const { launchBrowser, closeBrowser } = require('./browser-launcher');
+const { launchBrowser, closeBrowser, canLaunchHeaded } = require('./browser-launcher');
 const sessionStore = require('./session-store');
+const { runVncAuth, isVncAvailable } = require('./vnc-auth');
 
 const CAPTCHA_SELECTORS = [
   'iframe[src*="arkose"]',
@@ -50,6 +51,25 @@ async function detectCaptcha(page) {
  * @returns {{ ok, session, error, captchaDetected }}
  */
 async function runAuthFlow(sessionName, url, options = {}) {
+  // Force VNC mode
+  if (options.vnc) {
+    return runVncAuth(sessionName, url, options);
+  }
+
+  // Auto-detect: try headed, fallback to VNC
+  const headed = await canLaunchHeaded();
+  if (!headed) {
+    if (isVncAvailable()) {
+      return runVncAuth(sessionName, url, options);
+    }
+    return {
+      ok: false,
+      session: sessionName,
+      error: 'no_display',
+      message: 'No display available for headed browser. Install Xvfb, x11vnc, and websockify for remote auth: sudo apt-get install xvfb x11vnc websockify novnc'
+    };
+  }
+
   const timeout = (options.timeout || 300) * 1000;
   const pollInterval = 2000;
 
