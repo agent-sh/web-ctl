@@ -78,34 +78,14 @@ function resolveSelector(page, selector) {
 
 /**
  * Get accessibility tree snapshot formatted as text.
+ * Uses Playwright's ariaSnapshot API (page.accessibility was removed in v1.50+).
  */
 async function getSnapshot(page) {
   try {
-    const snapshot = await page.accessibility.snapshot();
-    if (!snapshot) return '(empty accessibility tree)';
-    return formatAccessibilityTree(snapshot, 0);
+    return await page.locator(':root').ariaSnapshot();
   } catch {
     return '(accessibility tree unavailable)';
   }
-}
-
-function formatAccessibilityTree(node, depth) {
-  const indent = '  '.repeat(depth);
-  let line = `${indent}${node.role || 'unknown'}`;
-  if (node.name) line += ` "${node.name}"`;
-  if (node.value) line += ` value="${node.value}"`;
-  if (node.checked !== undefined) line += ` checked=${node.checked}`;
-  if (node.pressed !== undefined) line += ` pressed=${node.pressed}`;
-
-  let result = line;
-
-  if (node.children) {
-    for (const child of node.children) {
-      result += '\n' + formatAccessibilityTree(child, depth + 1);
-    }
-  }
-
-  return result;
 }
 
 // ============ Session Commands ============
