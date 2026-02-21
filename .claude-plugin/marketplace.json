@@ -1,0 +1,28 @@
+{
+  "name": "web-ctl",
+  "description": "Browser automation and web testing toolkit for AI agents. Headless browser control, persistent sessions, auth handoff.",
+  "version": "1.0.0",
+  "owner": {
+    "name": "Avi Fenesh",
+    "url": "https://github.com/avifenesh"
+  },
+  "repository": "https://github.com/agent-sh/web-ctl",
+  "keywords": [
+    "browser",
+    "automation",
+    "playwright",
+    "web",
+    "sessions"
+  ],
+  "plugins": [
+    {
+      "name": "web-ctl",
+      "source": ".",
+      "description": "Browser automation and web testing toolkit for AI agents. Headless browser control, persistent sessions, auth handoff.",
+      "version": "1.0.0",
+      "category": "automation",
+      "requires": [],
+      "core": ">=1.0.0"
+    }
+  ]
+}
