@@ -5,6 +5,9 @@
   "bin": {
     "web-ctl": "scripts/web-ctl.js"
   },
+  "scripts": {
+    "test": "node --test tests/"
+  },
   "peerDependencies": {
     "playwright": ">=1.40.0"
   },
