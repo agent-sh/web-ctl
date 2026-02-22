@@ -93,4 +93,13 @@ describe('session verify', () => {
     assert.equal(result.ok, false);
     assert.equal(result.error, 'unknown_provider');
   });
+
+  it('returns invalid_url for malformed URL', () => {
+    const store = getStore();
+    store.createSession('invalidurl');
+
+    const result = runCliSafe('session', 'verify', 'invalidurl', '--url', 'not-a-url');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'invalid_url');
+  });
 });

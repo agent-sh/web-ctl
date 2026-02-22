@@ -256,10 +256,6 @@ async function sessionVerify(name, opts) {
       successLocalStorage: authOpts.successLocalStorage
     });
 
-    if (opts.expectSelector && !authOpts.successSelector) {
-      // expectSelector was handled via successSelector above
-    }
-
     await closeBrowser(name, context);
     sessionStore.unlockSession(name);
 
