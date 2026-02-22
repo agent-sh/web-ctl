@@ -257,6 +257,37 @@ Auto-detects username and password fields, fills them, finds and clicks the subm
 
 Returns: `{ url, loggedIn, snapshot }`
 
+## Snapshot Control
+
+All actions that return a snapshot support these flags to control output size:
+
+### --snapshot-depth N - Limit Tree Depth
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-depth 2
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> --snapshot-depth 3
+```
+
+Keeps only the top N levels of the ARIA tree. Deeper nodes are replaced with `- ...` truncation markers. Useful for large pages where the full tree exceeds context limits.
+
+### --snapshot-selector sel - Scope to Subtree
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-selector "css=nav"
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click "#btn" --snapshot-selector "#main"
+```
+
+Takes the snapshot from a specific DOM subtree instead of the full body. Accepts the same selector syntax as other actions.
+
+### --no-snapshot - Omit Snapshot
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click "#submit" --no-snapshot
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> fill "#email" user@test.com --no-snapshot
+```
+
+Skips the snapshot entirely. The `snapshot` field is omitted from the JSON response. Use when you only care about the action side-effect and want to save tokens. The explicit `snapshot` action ignores this flag.
+
 ## Selector Syntax
 
 | Pattern | Example | Description |

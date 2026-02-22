@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Added
+- `--snapshot-depth N` flag to limit ARIA tree depth in snapshot output, replacing deep subtrees with `- ...` truncation markers
+- `--snapshot-selector <sel>` flag to scope snapshots to a DOM subtree instead of the full page body
+- `--no-snapshot` flag to omit snapshot from action responses entirely, saving tokens when only the side-effect matters
 - `session verify` command to check if session is still authenticated before multi-step flows
 - 12 action macros for common UI patterns: `select-option`, `tab-switch`, `modal-dismiss`, `form-fill`, `search-select`, `date-pick`, `file-upload`, `hover-reveal`, `scroll-to`, `wait-toast`, `iframe-action`, `login`
 - `file-upload` macro enforces path allowlist (`/tmp`, cwd, `WEB_CTL_UPLOAD_DIR`) and blocks dotfile paths
