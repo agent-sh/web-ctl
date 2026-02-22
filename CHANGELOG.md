@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Use `body` selector instead of `:root` for cleaner ariaSnapshot output (#19)
+- Log warning on ariaSnapshot failure instead of silently swallowing errors
+
 ## 1.0.0
 
 - Initial release
