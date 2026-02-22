@@ -102,4 +102,19 @@ describe('session verify', () => {
     assert.equal(result.ok, false);
     assert.equal(result.error, 'invalid_url');
   });
+
+  it('returns invalid_name for bad session name', () => {
+    const result = runCliSafe('session', 'verify', 'bad name!@#');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'invalid_name');
+  });
+
+  it('returns invalid_expect_status for non-numeric status', () => {
+    const store = getStore();
+    store.createSession('statustest');
+
+    const result = runCliSafe('session', 'verify', 'statustest', '--url', 'https://example.com', '--expect-status', 'abc');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'invalid_expect_status');
+  });
 });

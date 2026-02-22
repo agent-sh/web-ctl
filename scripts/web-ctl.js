@@ -192,14 +192,29 @@ async function sessionRevoke(name) {
 
 async function sessionVerify(name, opts) {
   const { checkAuthSuccess } = require('./auth-check');
-  const { resolveAuthOptions: resolve, loadCustomProviders: loadCustom } = require('./auth-providers');
 
-  if (opts.providersFile) loadCustom(opts.providersFile);
+  try { validateSessionName(name); } catch (err) {
+    output({ ok: false, command: 'session verify', session: name, error: 'invalid_name', message: err.message });
+    return;
+  }
+
+  const session = sessionStore.getSession(name);
+  if (!session) {
+    output({ ok: false, command: 'session verify', session: name, error: 'session_not_found', message: `Session "${name}" not found. Run: session start ${name}` });
+    return;
+  }
+
+  if (session.status === 'expired') {
+    output({ ok: false, command: 'session verify', session: name, error: 'session_expired', message: 'Session has expired. Start a new one.' });
+    return;
+  }
+
+  if (opts.providersFile) loadCustomProviders(opts.providersFile);
 
   let authOpts = {};
   if (opts.provider) {
     try {
-      authOpts = resolve(opts.provider, opts);
+      authOpts = resolveAuthOptions(opts.provider, opts);
     } catch (err) {
       output({ ok: false, command: 'session verify', session: name, error: 'unknown_provider', message: err.message });
       return;
@@ -217,24 +232,20 @@ async function sessionVerify(name, opts) {
     return;
   }
 
-  const session = sessionStore.getSession(name);
-  if (!session) {
-    output({ ok: false, command: 'session verify', session: name, error: 'session_not_found', message: `Session "${name}" not found. Run: session start ${name}` });
-    return;
-  }
-
-  if (session.status === 'expired') {
-    output({ ok: false, command: 'session verify', session: name, error: 'session_expired', message: 'Session has expired. Start a new one.' });
-    return;
+  if (opts.expectStatus) {
+    const parsed = parseInt(opts.expectStatus, 10);
+    if (isNaN(parsed) || parsed < 100 || parsed > 599) {
+      output({ ok: false, command: 'session verify', session: name, error: 'invalid_expect_status', message: '--expect-status must be a numeric HTTP status code (100-599)' });
+      return;
+    }
   }
 
   let context;
-  let page;
   try {
     sessionStore.lockSession(name);
     const browser = await launchBrowser(name, { headless: true });
     context = browser.context;
-    page = browser.page;
+    const page = browser.page;
 
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     const status = response ? response.status() : null;
@@ -242,7 +253,7 @@ async function sessionVerify(name, opts) {
     if (opts.expectStatus) {
       const expected = parseInt(opts.expectStatus, 10);
       if (status !== expected) {
-        await closeBrowser(name, context);
+        try { await closeBrowser(name, context); } catch { /* ignore */ }
         sessionStore.unlockSession(name);
         output({ ok: false, command: 'session verify', session: name, authenticated: false, reason: `Expected status ${expected}, got ${status}`, url, status });
         return;
@@ -256,7 +267,7 @@ async function sessionVerify(name, opts) {
       successLocalStorage: authOpts.successLocalStorage
     });
 
-    await closeBrowser(name, context);
+    try { await closeBrowser(name, context); } catch { /* ignore */ }
     sessionStore.unlockSession(name);
 
     output({
@@ -266,6 +277,7 @@ async function sessionVerify(name, opts) {
       authenticated: authResult.success,
       reason: authResult.success ? 'Auth check passed' : 'Auth check failed',
       url,
+      currentUrl: authResult.currentUrl,
       status
     });
   } catch (err) {
