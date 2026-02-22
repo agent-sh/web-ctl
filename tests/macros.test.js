@@ -149,24 +149,38 @@ describe('macro argument validation', () => {
     );
   });
 
-  it('file-upload rejects paths to /etc', async () => {
+  it('date-pick rejects semantically invalid dates', async () => {
+    await assert.rejects(
+      () => macros['date-pick'](stubPage, ['#input'], { date: '2026-02-30' }, stubHelpers),
+      /Date out of range/
+    );
+  });
+
+  it('date-pick rejects month 13', async () => {
+    await assert.rejects(
+      () => macros['date-pick'](stubPage, ['#input'], { date: '2026-13-01' }, stubHelpers),
+      /Date out of range/
+    );
+  });
+
+  it('file-upload rejects paths outside allowed directories', async () => {
     await assert.rejects(
       () => macros['file-upload'](stubPage, ['input', '/etc/passwd'], {}, stubHelpers),
-      /restricted system directory/
+      /File path must be within/
     );
   });
 
-  it('file-upload rejects paths containing .ssh', async () => {
+  it('file-upload rejects dotfiles even in allowed dirs', async () => {
+    await assert.rejects(
+      () => macros['file-upload'](stubPage, ['input', '/tmp/.env'], {}, stubHelpers),
+      /dotfile/
+    );
+  });
+
+  it('file-upload rejects home directory paths', async () => {
     await assert.rejects(
       () => macros['file-upload'](stubPage, ['input', '/home/user/.ssh/id_rsa'], {}, stubHelpers),
-      /sensitive data/
-    );
-  });
-
-  it('file-upload rejects paths containing .env', async () => {
-    await assert.rejects(
-      () => macros['file-upload'](stubPage, ['input', '/app/.env'], {}, stubHelpers),
-      /sensitive data/
+      /File path must be within/
     );
   });
 
@@ -220,6 +234,13 @@ describe('wait-toast detection', () => {
   const stubHelpers = {
     getSnapshot: async () => '(stub)'
   };
+
+  it('rejects non-numeric timeout', async () => {
+    await assert.rejects(
+      () => macros['wait-toast']({}, [], { timeout: 'abc' }, stubHelpers),
+      /--timeout must be a positive integer/
+    );
+  });
 
   it('throws when no toast appears within timeout', async () => {
     const page = {

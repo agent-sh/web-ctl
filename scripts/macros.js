@@ -171,6 +171,10 @@ async function datePick(page, actionArgs, opts, helpers) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(opts.date)) {
     throw new Error('Invalid date format. Use YYYY-MM-DD (e.g., 2026-03-15)');
   }
+  const parsed = new Date(opts.date + 'T00:00:00');
+  if (isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== opts.date) {
+    throw new Error(`Date out of range: ${opts.date}`);
+  }
 
   const { resolveSelector, waitForStable, getSnapshot } = helpers;
   const [targetYear, targetMonth, targetDay] = opts.date.split('-').map(Number);
@@ -198,6 +202,13 @@ async function datePick(page, actionArgs, opts, helpers) {
     await waitForStable(page, { timeout: 2000 });
   }
 
+  // Verify we navigated to the right month
+  const finalHeader = await page.locator('[class*="calendar"], [role="grid"], [class*="datepicker"]')
+    .first().textContent().catch(() => '');
+  if (!finalHeader.includes(targetMonthName) || !finalHeader.includes(String(targetYear))) {
+    throw new Error(`Could not navigate calendar to ${opts.date}. Stuck at: ${finalHeader.trim()}`);
+  }
+
   // Click the target day
   await page.getByText(String(targetDay), { exact: true }).click({ timeout: 10000 });
   await waitForStable(page, { timeout: 5000 });
@@ -212,18 +223,19 @@ async function fileUpload(page, actionArgs, opts, helpers) {
     throw new Error('Usage: file-upload <selector> <file-path> [--wait-for <selector>]');
   }
 
-  // Reject paths to sensitive system locations
+  // Only allow uploads from safe directories (allowlist approach)
   const path = require('path');
   const resolved = path.resolve(filePath);
-  const blocked = ['/etc', '/var', '/root', '/proc', '/sys'];
-  for (const dir of blocked) {
-    if (resolved.startsWith(dir + '/') || resolved === dir) {
-      throw new Error(`File path "${filePath}" points to a restricted system directory.`);
-    }
+  const allowedPrefixes = ['/tmp/', process.cwd() + '/'];
+  const uploadDir = process.env.WEB_CTL_UPLOAD_DIR;
+  if (uploadDir) allowedPrefixes.push(path.resolve(uploadDir) + '/');
+  const allowed = allowedPrefixes.some(prefix => resolved.startsWith(prefix));
+  if (!allowed) {
+    throw new Error(`File path must be within /tmp, the working directory, or WEB_CTL_UPLOAD_DIR. Got: ${resolved}`);
   }
-  // Reject common sensitive files
-  if (resolved.includes('.ssh') || resolved.includes('.gnupg') || resolved.includes('.env')) {
-    throw new Error(`File path "${filePath}" may contain sensitive data. Use a safe upload directory.`);
+  // Extra guard for dotfiles even within allowed dirs
+  if (/\/\.[a-z]/i.test(resolved)) {
+    throw new Error(`File path "${filePath}" contains a dotfile/hidden directory. Use non-hidden paths.`);
   }
 
   const { resolveSelector, waitForStable, getSnapshot } = helpers;
@@ -298,6 +310,9 @@ async function scrollTo(page, actionArgs, opts, helpers) {
 async function waitToast(page, actionArgs, opts, helpers) {
   const { getSnapshot } = helpers;
   const timeout = opts.timeout ? parseInt(opts.timeout, 10) : 10000;
+  if (isNaN(timeout) || timeout <= 0) {
+    throw new Error('--timeout must be a positive integer (milliseconds)');
+  }
   const combinedSelector = ':is([role="alert"], [role="status"], [class*="toast"], [class*="snackbar"])';
 
   const toast = page.locator(combinedSelector).first();
@@ -365,9 +380,14 @@ async function iframeAction(page, actionArgs, opts, helpers) {
 }
 
 async function login(page, actionArgs, opts, helpers) {
-  if (!opts.user || !opts.pass) {
-    throw new Error('Usage: login --user <username> --pass <password> [--success-selector <selector>]');
+  // Support env vars as a safer alternative to CLI args
+  const user = opts.user || process.env.WEB_CTL_USER;
+  const pass = opts.pass || process.env.WEB_CTL_PASS;
+  if (!user || !pass) {
+    throw new Error('Usage: login --user <username> --pass <password> [--success-selector <selector>]\n  Or set WEB_CTL_USER and WEB_CTL_PASS environment variables.');
   }
+  // Use local vars instead of opts to avoid accidental exposure
+  opts = { ...opts, user: undefined, pass: undefined };
 
   const { resolveSelector, waitForStable, getSnapshot } = helpers;
 
@@ -382,14 +402,14 @@ async function login(page, actionArgs, opts, helpers) {
     throw new Error('Could not auto-detect username/email field. Use fill action directly.');
   }
 
-  await usernameField.fill(opts.user);
+  await usernameField.fill(user);
 
   // Auto-detect password field
   const passwordField = page.locator('input[type="password"]').first();
   if (await passwordField.count() === 0) {
     throw new Error('Could not find password field. Use fill action directly.');
   }
-  await passwordField.fill(opts.pass);
+  await passwordField.fill(pass);
 
   // Find and click submit
   let submitBtn = page.locator('button[type="submit"], input[type="submit"]').first();
