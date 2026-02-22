@@ -117,4 +117,13 @@ describe('session verify', () => {
     assert.equal(result.ok, false);
     assert.equal(result.error, 'invalid_expect_status');
   });
+
+  it('returns invalid_expect_status for out-of-range status', () => {
+    const store = getStore();
+    store.createSession('rangetest');
+
+    const result = runCliSafe('session', 'verify', 'rangetest', '--url', 'https://example.com', '--expect-status', '600');
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'invalid_expect_status');
+  });
 });

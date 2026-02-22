@@ -4,6 +4,7 @@
 const sessionStore = require('./session-store');
 const { launchBrowser, closeBrowser, randomDelay, waitForStable } = require('./browser-launcher');
 const { runAuthFlow } = require('./auth-flow');
+const { checkAuthSuccess } = require('./auth-check');
 const { sanitizeWebContent, wrapOutput } = require('./redact');
 const { listProviders, resolveAuthOptions, loadCustomProviders } = require('./auth-providers');
 
@@ -191,8 +192,6 @@ async function sessionRevoke(name) {
 }
 
 async function sessionVerify(name, opts) {
-  const { checkAuthSuccess } = require('./auth-check');
-
   try { validateSessionName(name); } catch (err) {
     output({ ok: false, command: 'session verify', session: name, error: 'invalid_name', message: err.message });
     return;
@@ -232,12 +231,10 @@ async function sessionVerify(name, opts) {
     return;
   }
 
-  if (opts.expectStatus) {
-    const parsed = parseInt(opts.expectStatus, 10);
-    if (isNaN(parsed) || parsed < 100 || parsed > 599) {
-      output({ ok: false, command: 'session verify', session: name, error: 'invalid_expect_status', message: '--expect-status must be a numeric HTTP status code (100-599)' });
-      return;
-    }
+  const expectedStatus = opts.expectStatus ? parseInt(opts.expectStatus, 10) : null;
+  if (expectedStatus !== null && (isNaN(expectedStatus) || expectedStatus < 100 || expectedStatus > 599)) {
+    output({ ok: false, command: 'session verify', session: name, error: 'invalid_expect_status', message: '--expect-status must be a numeric HTTP status code (100-599)' });
+    return;
   }
 
   let context;
@@ -250,14 +247,11 @@ async function sessionVerify(name, opts) {
     const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
     const status = response ? response.status() : null;
 
-    if (opts.expectStatus) {
-      const expected = parseInt(opts.expectStatus, 10);
-      if (status !== expected) {
-        try { await closeBrowser(name, context); } catch { /* ignore */ }
-        sessionStore.unlockSession(name);
-        output({ ok: false, command: 'session verify', session: name, authenticated: false, reason: `Expected status ${expected}, got ${status}`, url, status });
-        return;
-      }
+    if (expectedStatus !== null && status !== expectedStatus) {
+      try { await closeBrowser(name, context); } catch { /* ignore */ }
+      try { sessionStore.unlockSession(name); } catch { /* ignore */ }
+      output({ ok: false, command: 'session verify', session: name, authenticated: false, reason: `Expected status ${expectedStatus}, got ${status}`, url, status });
+      return;
     }
 
     const authResult = await checkAuthSuccess(page, context, url, {
@@ -268,7 +262,7 @@ async function sessionVerify(name, opts) {
     });
 
     try { await closeBrowser(name, context); } catch { /* ignore */ }
-    sessionStore.unlockSession(name);
+    try { sessionStore.unlockSession(name); } catch { /* ignore */ }
 
     output({
       ok: authResult.success,
