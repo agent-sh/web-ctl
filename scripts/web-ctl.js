@@ -6,6 +6,7 @@ const { launchBrowser, closeBrowser, randomDelay, waitForStable } = require('./b
 const { runAuthFlow } = require('./auth-flow');
 const { sanitizeWebContent, wrapOutput } = require('./redact');
 const { listProviders, resolveAuthOptions, loadCustomProviders } = require('./auth-providers');
+const { macros } = require('./macros');
 
 const path = require('path');
 
@@ -441,8 +442,17 @@ async function runAction(sessionName, action, actionArgs, opts) {
         break;
       }
 
-      default:
-        throw new Error(`Unknown action: ${action}. Available: goto, snapshot, click, click-wait, type, read, fill, wait, evaluate, screenshot, network, checkpoint`);
+      default: {
+        const macro = macros[action];
+        if (macro) {
+          const helpers = { resolveSelector, waitForStable, randomDelay, getSnapshot, sanitizeWebContent };
+          result = await macro(page, actionArgs, opts, helpers);
+        } else {
+          const allActions = ['goto', 'snapshot', 'click', 'click-wait', 'type', 'read', 'fill', 'wait', 'evaluate', 'screenshot', 'network', 'checkpoint', ...Object.keys(macros)];
+          throw new Error(`Unknown action: ${action}. Available: ${allActions.join(', ')}`);
+        }
+        break;
+      }
     }
 
     await closeBrowser(sessionName, context);
@@ -512,6 +522,23 @@ Run actions:
   screenshot [--path <file>]    Take screenshot
   network [--filter <pattern>]  Capture network requests
   checkpoint [--timeout <sec>]  Open headed browser for interaction
+
+Macros (higher-level actions):
+  select-option <sel> <text>    Click trigger, pick option by text
+  tab-switch <name>             Switch to tab by name
+  modal-dismiss [--accept]      Auto-detect and dismiss modal/dialog
+  form-fill --fields '<json>'   Fill form fields by label
+    [--submit] [--submit-text]
+  search-select <sel> <q>       Type query, pick from suggestions
+    --pick <text>
+  date-pick <sel> --date <d>    Pick date from calendar widget
+  file-upload <sel> <path>      Upload file to input element
+  hover-reveal <sel>            Hover trigger, click revealed target
+    --click <target>
+  scroll-to <sel>               Scroll element into view
+  wait-toast [--dismiss]        Wait for toast/notification
+  iframe-action <sel> <action>  Perform action inside iframe
+  login --user <u> --pass <p>   Auto-detect and fill login form
 
 Selector syntax:
   role=button[name='Submit']    ARIA role selector

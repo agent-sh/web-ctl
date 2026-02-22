@@ -107,6 +107,23 @@ web-ctl session end github
 | `network` | `run <s> network [--filter]` | `{ url, requests }` |
 | `checkpoint` | `run <s> checkpoint [--timeout]` | `{ url, message }` |
 
+### Macros
+
+| Macro | Usage | Returns |
+|-------|-------|---------|
+| `select-option` | `run <s> select-option <sel> <text> [--exact]` | `{ url, selected, snapshot }` |
+| `tab-switch` | `run <s> tab-switch <name> [--wait-for <sel>]` | `{ url, tab, snapshot }` |
+| `modal-dismiss` | `run <s> modal-dismiss [--accept] [--selector <sel>]` | `{ url, dismissed, snapshot }` |
+| `form-fill` | `run <s> form-fill --fields '<json>' [--submit]` | `{ url, filled, snapshot }` |
+| `search-select` | `run <s> search-select <sel> <query> --pick <text>` | `{ url, query, picked, snapshot }` |
+| `date-pick` | `run <s> date-pick <sel> --date <YYYY-MM-DD>` | `{ url, date, snapshot }` |
+| `file-upload` | `run <s> file-upload <sel> <path> [--wait-for <sel>]` | `{ url, uploaded, snapshot }` |
+| `hover-reveal` | `run <s> hover-reveal <sel> --click <target>` | `{ url, hovered, clicked, snapshot }` |
+| `scroll-to` | `run <s> scroll-to <sel> [--container <sel>]` | `{ url, scrolledTo, snapshot }` |
+| `wait-toast` | `run <s> wait-toast [--timeout <ms>] [--dismiss]` | `{ url, toast, snapshot }` |
+| `iframe-action` | `run <s> iframe-action <iframe> <action> [args]` | `{ url, iframe, ..., snapshot }` |
+| `login` | `run <s> login --user <u> --pass <p>` | `{ url, loggedIn, snapshot }` |
+
 ### click vs click-wait
 
 `click` fires the click and captures a snapshot immediately. For SPAs where React/Vue re-renders asynchronously, use `click-wait` or `click --wait-stable` - these wait for network idle and DOM stability (no mutations for 500ms) before returning.
@@ -182,7 +199,7 @@ All error responses include actionable recovery suggestions:
 
 | Skill | Purpose |
 |-------|---------|
-| `web-browse` | Headless actions: goto, click, click-wait, snapshot, type, read, fill, wait, evaluate, screenshot, network, checkpoint |
+| `web-browse` | Headless actions: goto, click, click-wait, snapshot, type, read, fill, wait, evaluate, screenshot, network, checkpoint + 12 macros |
 | `web-auth` | Human-in-the-loop auth: headed browser, polls for success URL/selector, encrypts session |
 
 ## Auth Handoff Protocol
