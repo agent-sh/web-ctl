@@ -38,7 +38,7 @@ async function getSnapshot(page, opts = {}) {
 }
 
 function trimByDepth(snapshot, maxDepth) {
-  if (maxDepth == null || maxDepth === undefined) return snapshot;
+  if (maxDepth == null) return snapshot;
   if (typeof snapshot === 'string' && snapshot.startsWith('(')) return snapshot;
 
   const lines = snapshot.split('\n');
@@ -46,8 +46,8 @@ function trimByDepth(snapshot, maxDepth) {
   let prevCut = false;
 
   for (const line of lines) {
-    const stripped = line.replace(/^ */, '');
-    const spaces = line.length - stripped.length;
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
     const depth = Math.floor(spaces / 2);
 
     if (depth < maxDepth) {

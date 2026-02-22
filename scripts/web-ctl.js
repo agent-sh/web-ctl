@@ -114,7 +114,7 @@ async function getSnapshot(page, opts = {}) {
  * @returns {string} Trimmed snapshot
  */
 function trimByDepth(snapshot, maxDepth) {
-  if (maxDepth == null || maxDepth === undefined) return snapshot;
+  if (maxDepth == null) return snapshot;
   if (typeof snapshot === 'string' && snapshot.startsWith('(')) return snapshot;
 
   const lines = snapshot.split('\n');
@@ -122,8 +122,8 @@ function trimByDepth(snapshot, maxDepth) {
   let prevCut = false;
 
   for (const line of lines) {
-    const stripped = line.replace(/^ */, '');
-    const spaces = line.length - stripped.length;
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
     const depth = Math.floor(spaces / 2);
 
     if (depth < maxDepth) {
@@ -427,8 +427,8 @@ async function runAction(sessionName, action, actionArgs, opts) {
   // Validate and normalize snapshot options
   if (opts.snapshotDepth != null) {
     const depth = parseInt(opts.snapshotDepth, 10);
-    if (isNaN(depth) || depth <= 0) {
-      output({ ok: false, command: `run ${action}`, session: sessionName, error: 'invalid_option', message: '--snapshot-depth must be a positive integer' });
+    if (isNaN(depth) || depth <= 0 || depth > 100) {
+      output({ ok: false, command: `run ${action}`, session: sessionName, error: 'invalid_option', message: '--snapshot-depth must be a positive integer (max 100)' });
       return;
     }
     opts.snapshotDepth = depth;
@@ -614,7 +614,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
           const helpers = { resolveSelector, waitForStable, randomDelay, getSnapshot: (page) => getSnapshot(page, opts), sanitizeWebContent };
           result = await macro(page, actionArgs, opts, helpers);
           // Clean up null snapshot from macros when --no-snapshot is active
-          if (result && result.snapshot === null) delete result.snapshot;
+          if (result && result.snapshot == null) delete result.snapshot;
         } else {
           const allActions = ['goto', 'snapshot', 'click', 'click-wait', 'type', 'read', 'fill', 'wait', 'evaluate', 'screenshot', 'network', 'checkpoint', ...Object.keys(macros)];
           throw new Error(`Unknown action: ${action}. Available: ${allActions.join(', ')}`);
