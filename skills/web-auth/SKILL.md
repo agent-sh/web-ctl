@@ -87,13 +87,24 @@ On error: Check the error message. Common issues:
 
 ### 5. Verify Auth
 
-After successful auth, verify the session works:
+After successful auth, verify the session is still authenticated:
 
 ```bash
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session-name> goto <protected-page-url>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session verify <session-name> --url <protected-page-url>
 ```
 
-Check the snapshot to confirm the user is logged in.
+For known providers, use `--provider` to use the pre-configured success URL and selectors:
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session verify <session-name> --provider <provider>
+```
+
+The command returns structured JSON:
+
+- `{ "ok": true, "authenticated": true }` - Session is valid
+- `{ "ok": false, "authenticated": false, "reason": "..." }` - Session is not authenticated
+- `{ "ok": false, "error": "session_not_found" }` - Session does not exist
+- `{ "ok": false, "error": "session_expired" }` - Session has expired
 
 ## Example: X/Twitter Login (with provider)
 

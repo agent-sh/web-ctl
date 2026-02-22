@@ -25,8 +25,17 @@ rebuildMap(allProviders);
  * Custom providers with the same slug override built-in ones.
  */
 function loadCustomProviders(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) return;
-  const custom = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  if (!filePath) {
+    allProviders = [...builtinProviders];
+    rebuildMap(allProviders);
+    return;
+  }
+
+  let raw;
+  try { raw = fs.readFileSync(filePath, 'utf8'); } catch { return; }
+
+  let custom;
+  try { custom = JSON.parse(raw); } catch { return; }
   if (!Array.isArray(custom)) return;
 
   const builtinMap = new Map(builtinProviders.map(p => [p.slug, p]));
@@ -72,7 +81,11 @@ function resolveAuthOptions(providerName, cliOpts = {}) {
     successUrl: cliOpts.successUrl || provider.successUrl || undefined,
     successSelector: cliOpts.successSelector || provider.successSelector || undefined,
     successCookie: cliOpts.successCookie || provider.successCookie || undefined,
-    twoFactorHint: cliOpts.twoFactorHint || provider.twoFactorHint || undefined
+    successLocalStorage: cliOpts.successLocalStorage || provider.successLocalStorage || undefined,
+    twoFactorHint: cliOpts.twoFactorHint || provider.twoFactorHint || undefined,
+    twoFactorSelectors: provider.twoFactorSelectors || undefined,
+    flowType: provider.flowType || undefined,
+    notes: provider.notes || undefined
   };
 
   if (provider.captchaSelectors && provider.captchaSelectors.length > 0) {

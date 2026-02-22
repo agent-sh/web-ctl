@@ -1,6 +1,6 @@
 ---
 name: web-ctl
-description: "Browser automation for AI agents — navigate, authenticate, and interact with web pages."
+description: "Browser automation for AI agents - navigate, authenticate, and interact with web pages."
 codex-description: 'Use when user asks to "open a webpage", "browse website", "log into site", "scrape page", "interact with web", "web automation", "browser control".'
 argument-hint: "[session] [action] [--url [url]] [--headed]"
 allowed-tools: Skill, Task, Bash(node:*), Read, AskUserQuestion
@@ -45,6 +45,7 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <name> --provider <slug> --p
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session providers
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session list
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session end <name>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session verify <name> --url <url>
 
 # Browser actions
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url>
@@ -52,6 +53,20 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click <selector>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> read <selector>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> screenshot
+
+# Macros
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> select-option <sel> <text>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> tab-switch <name>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> modal-dismiss [--accept]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> form-fill --fields '<json>' [--submit]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> search-select <sel> <query> --pick <text>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> date-pick <sel> --date <YYYY-MM-DD>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> file-upload <sel> <path>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> hover-reveal <sel> --click <target>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> scroll-to <sel>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> wait-toast [--dismiss]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> iframe-action <iframe> <action> [args]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> login --user <u> --pass <p>
 ```
 
 ## Examples
