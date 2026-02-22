@@ -25,8 +25,17 @@ rebuildMap(allProviders);
  * Custom providers with the same slug override built-in ones.
  */
 function loadCustomProviders(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) return;
-  const custom = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  if (!filePath) {
+    allProviders = [...builtinProviders];
+    rebuildMap(allProviders);
+    return;
+  }
+
+  let raw;
+  try { raw = fs.readFileSync(filePath, 'utf8'); } catch { return; }
+
+  let custom;
+  try { custom = JSON.parse(raw); } catch { return; }
   if (!Array.isArray(custom)) return;
 
   const builtinMap = new Map(builtinProviders.map(p => [p.slug, p]));

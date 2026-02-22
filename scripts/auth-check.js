@@ -11,6 +11,8 @@
  * @param {object} options - { successUrl, successSelector, successCookie }
  * @returns {{ success: boolean, currentUrl: string }}
  */
+const HEURISTIC_EXCLUDE = ['login', 'signin', 'auth', 'oauth', 'sso', 'error', 'failed'];
+
 async function checkAuthSuccess(page, context, originalUrl, options = {}) {
   const currentUrl = page.url();
 
@@ -51,7 +53,10 @@ async function checkAuthSuccess(page, context, originalUrl, options = {}) {
       const cookies = await context.cookies();
       const match = cookies.find(c => {
         if (c.name !== name) return false;
-        if (domain && !c.domain.endsWith(domain.replace(/^\./, ''))) return false;
+        if (domain) {
+          const bare = domain.replace(/^\./, '');
+          if (c.domain !== bare && c.domain !== '.' + bare && !c.domain.endsWith('.' + bare)) return false;
+        }
         if (value !== undefined && c.value !== value) return false;
         return true;
       });
@@ -80,8 +85,7 @@ async function checkAuthSuccess(page, context, originalUrl, options = {}) {
 
   // 4. URL-change heuristic (only when no explicit success condition)
   if (!options.successUrl && !options.successSelector && !options.successCookie && !options.successLocalStorage) {
-    const excludePatterns = ['login', 'signin', 'auth', 'oauth', 'sso', 'error', 'failed'];
-    if (currentUrl !== originalUrl && !excludePatterns.some(p => currentUrl.includes(p))) {
+    if (currentUrl !== originalUrl && !HEURISTIC_EXCLUDE.some(p => currentUrl.includes(p))) {
       return { success: true, currentUrl };
     }
   }

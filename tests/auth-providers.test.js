@@ -259,6 +259,44 @@ describe('loadCustomProviders', () => {
       loadCustomProviders(null);
     }
   });
+
+  it('handles malformed JSON gracefully', () => {
+    const tmpFile = path.join(os.tmpdir(), `test-providers-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, '{not valid json!!!');
+    try {
+      loadCustomProviders(tmpFile);
+      assert.ok(getProvider('github')); // built-ins still work
+    } finally {
+      fs.unlinkSync(tmpFile);
+      loadCustomProviders(null);
+    }
+  });
+
+  it('handles non-array JSON gracefully', () => {
+    const tmpFile = path.join(os.tmpdir(), `test-providers-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, '{"slug":"x"}');
+    try {
+      loadCustomProviders(tmpFile);
+      assert.ok(getProvider('github')); // built-ins still work
+    } finally {
+      fs.unlinkSync(tmpFile);
+      loadCustomProviders(null);
+    }
+  });
+
+  it('null resets to built-in providers', () => {
+    const tmpFile = path.join(os.tmpdir(), `test-providers-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, JSON.stringify([{ slug: 'custom', name: 'Custom', loginUrl: 'https://custom.com' }]));
+    try {
+      loadCustomProviders(tmpFile);
+      assert.ok(getProvider('custom'));
+      loadCustomProviders(null);
+      assert.equal(getProvider('custom'), null);
+      assert.ok(getProvider('github'));
+    } finally {
+      fs.unlinkSync(tmpFile);
+    }
+  });
 });
 
 // ============ checkAuthSuccess ============
