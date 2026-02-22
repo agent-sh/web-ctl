@@ -9,8 +9,8 @@ const providers = require('../scripts/providers.json');
 // ============ providers.json schema ============
 
 describe('providers.json schema', () => {
-  it('contains 12 providers', () => {
-    assert.equal(providers.length, 12);
+  it('contains at least 12 providers', () => {
+    assert.ok(providers.length >= 12);
   });
 
   it('every provider has required fields', () => {
@@ -73,9 +73,9 @@ describe('getProvider', () => {
 // ============ listProviders ============
 
 describe('listProviders', () => {
-  it('returns all 12 providers', () => {
+  it('returns all providers', () => {
     const list = listProviders();
-    assert.equal(list.length, 12);
+    assert.equal(list.length, providers.length);
   });
 
   it('each entry has slug, name, loginUrl', () => {
@@ -237,6 +237,47 @@ describe('checkAuthSuccess', () => {
     const page = mockPage('https://example.com/login');
     const ctx = mockContext();
     const result = await checkAuthSuccess(page, ctx, 'https://example.com/login', {});
+    assert.equal(result.success, false);
+  });
+
+  it('heuristic rejects URLs containing oauth/sso/auth', async () => {
+    for (const path of ['/oauth/callback', '/sso/redirect', '/auth/verify']) {
+      const page = mockPage(`https://example.com${path}`);
+      const ctx = mockContext();
+      const result = await checkAuthSuccess(page, ctx, 'https://example.com/login', {});
+      assert.equal(result.success, false, `should reject ${path}`);
+    }
+  });
+
+  it('successUrl uses origin matching not string prefix', async () => {
+    const page = mockPage('https://example.com.evil.com/dashboard');
+    const ctx = mockContext();
+    const result = await checkAuthSuccess(page, ctx, 'https://example.com/login', {
+      successUrl: 'https://example.com'
+    });
+    assert.equal(result.success, false);
+  });
+
+  it('selector returns false for META with empty content', async () => {
+    const page = {
+      url: () => 'https://github.com',
+      $: async () => ({
+        evaluate: async (fn) => fn({ tagName: 'META', hasAttribute: () => true, getAttribute: () => '' })
+      })
+    };
+    const ctx = mockContext();
+    const result = await checkAuthSuccess(page, ctx, 'https://github.com/login', {
+      successSelector: 'meta[name="user-login"]'
+    });
+    assert.equal(result.success, false);
+  });
+
+  it('handles cookie read errors gracefully', async () => {
+    const page = mockPage('https://github.com/something');
+    const ctx = { cookies: async () => { throw new Error('cookie error'); } };
+    const result = await checkAuthSuccess(page, ctx, 'https://github.com/login', {
+      successCookie: { domain: '.github.com', name: 'logged_in', value: 'yes' }
+    });
     assert.equal(result.success, false);
   });
 });

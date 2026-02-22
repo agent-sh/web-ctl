@@ -95,7 +95,7 @@
     "name": "AWS Console",
     "aliases": ["aws"],
     "loginUrl": "https://signin.aws.amazon.com",
-    "successUrl": "https://console.aws",
+    "successUrl": "https://console.aws.amazon.com",
     "captchaSelectors": ["iframe[src*=\"captcha\"]"],
     "captchaTextPatterns": ["security check"],
     "twoFactorHint": "AWS may prompt for an MFA code from your authenticator or hardware token."

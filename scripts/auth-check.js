@@ -14,10 +14,16 @@
 async function checkAuthSuccess(page, context, originalUrl, options = {}) {
   const currentUrl = page.url();
 
-  // 1. Check success by URL prefix
+  // 1. Check success by URL origin match
   if (options.successUrl) {
-    if (currentUrl.startsWith(options.successUrl)) {
-      return { success: true, currentUrl };
+    try {
+      const expected = new URL(options.successUrl);
+      const actual = new URL(currentUrl);
+      if (actual.origin === expected.origin && actual.pathname.startsWith(expected.pathname)) {
+        return { success: true, currentUrl };
+      }
+    } catch {
+      // Malformed URL - fall through
     }
   }
 
@@ -59,7 +65,8 @@ async function checkAuthSuccess(page, context, originalUrl, options = {}) {
 
   // 4. URL-change heuristic (only when no explicit success condition)
   if (!options.successUrl && !options.successSelector && !options.successCookie) {
-    if (currentUrl !== originalUrl && !currentUrl.includes('login') && !currentUrl.includes('signin')) {
+    const excludePatterns = ['login', 'signin', 'auth', 'oauth', 'sso', 'error', 'failed'];
+    if (currentUrl !== originalUrl && !excludePatterns.some(p => currentUrl.includes(p))) {
       return { success: true, currentUrl };
     }
   }

@@ -70,11 +70,13 @@ function getHostname() {
 /**
  * Clean up all spawned processes and session state.
  */
-async function cleanup(sessionName, context, procs) {
+async function cleanup(sessionName, context, procs, { authenticated = false } = {}) {
   if (context) {
     try { await closeBrowser(sessionName, context); } catch { /* ignore */ }
   }
-  try { sessionStore.updateSession(sessionName, { status: 'authenticated' }); } catch { /* ignore */ }
+  if (authenticated) {
+    try { sessionStore.updateSession(sessionName, { status: 'authenticated' }); } catch { /* ignore */ }
+  }
   try { sessionStore.unlockSession(sessionName); } catch { /* ignore */ }
 
   for (const proc of procs) {
@@ -172,7 +174,7 @@ async function runVncAuth(sessionName, url, options = {}) {
       });
 
       if (result.success) {
-        await cleanup(sessionName, context, procs);
+        await cleanup(sessionName, context, procs, { authenticated: true });
         return { ok: true, session: sessionName, url: result.currentUrl, ...info };
       }
 

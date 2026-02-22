@@ -47,7 +47,7 @@ function resolveAuthOptions(providerName, cliOpts = {}) {
     successUrl: cliOpts.successUrl || provider.successUrl || undefined,
     successSelector: cliOpts.successSelector || provider.successSelector || undefined,
     successCookie: cliOpts.successCookie || provider.successCookie || undefined,
-    twoFactorHint: provider.twoFactorHint || undefined
+    twoFactorHint: cliOpts.twoFactorHint || provider.twoFactorHint || undefined
   };
 
   // Merge captcha selectors - provider-specific ones come first
