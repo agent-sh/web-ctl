@@ -42,7 +42,13 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js session start <name>
 
 ### 2. Authenticate if Needed
 
-If the target site requires login, invoke the web-auth skill:
+If the target site requires login, prefer `--provider` for known sites (github, google, microsoft, x, reddit, discord, slack, linkedin, gitlab, atlassian, aws-console, notion):
+
+```
+Use Skill: web-auth <session-name> --provider <provider>
+```
+
+For unknown sites, specify the URL manually:
 
 ```
 Use Skill: web-auth <session-name> --url <login-url>

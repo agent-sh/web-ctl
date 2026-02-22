@@ -39,7 +39,9 @@ For complex requests like "find information on a website" or "fill out a form":
 ```bash
 # Session lifecycle
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session start <name>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <name> --provider <provider>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <name> --url <url>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session providers
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session list
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session end <name>
 
@@ -67,5 +69,10 @@ User: "Take a screenshot of example.com"
 
 User: "Log into Twitter"
 1. Start session "twitter"
-2. Auth with url https://x.com/i/flow/login
+2. Auth with `--provider twitter` (auto-configures URL and success detection)
+3. Report success/failure
+
+User: "Log into GitHub"
+1. Start session "github"
+2. Auth with `--provider github`
 3. Report success/failure
