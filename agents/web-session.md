@@ -64,6 +64,16 @@ To list available providers: `node ${PLUGIN_ROOT}/scripts/web-ctl.js session pro
 
 Tell the user a browser window will open for them to log in.
 
+### 2.5. Verify Auth (Optional Pre-Flight)
+
+If you need to confirm the session is authenticated before proceeding, use `session verify`:
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session verify <name> --provider <provider>
+```
+
+If `ok: false`, invoke the **web-auth** skill again to re-authenticate.
+
 ### 3. Browse
 
 For navigation and interaction, invoke the web-browse skill or call directly:

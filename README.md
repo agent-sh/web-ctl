@@ -140,6 +140,7 @@ This eliminates the common click-snapshot-check loop that wastes agent turns on 
 | `list` | `session list` | List all sessions |
 | `status` | `session status <name>` | Check session status |
 | `end` | `session end <name>` | Delete session |
+| `verify` | `session verify <name> --url <url>` | Verify session is still authenticated |
 | `revoke` | `session revoke <name>` | Delete all session data |
 
 ## Selector Syntax

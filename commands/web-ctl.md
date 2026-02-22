@@ -45,6 +45,7 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <name> --provider <slug> --p
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session providers
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session list
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session end <name>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session verify <name> --url <url>
 
 # Browser actions
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url>

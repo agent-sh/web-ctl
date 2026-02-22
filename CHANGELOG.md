@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- `session verify` command to check if session is still authenticated before multi-step flows
 - 12 action macros for common UI patterns: `select-option`, `tab-switch`, `modal-dismiss`, `form-fill`, `search-select`, `date-pick`, `file-upload`, `hover-reveal`, `scroll-to`, `wait-toast`, `iframe-action`, `login`
 - `file-upload` macro enforces path allowlist (`/tmp`, cwd, `WEB_CTL_UPLOAD_DIR`) and blocks dotfile paths
 - `login` macro supports `WEB_CTL_USER` / `WEB_CTL_PASS` environment variables as a safer alternative to CLI flags
@@ -11,7 +12,6 @@
 - Security hardening across macro implementations: input validation, path traversal prevention, credential hygiene
 - `date-pick` validates YYYY-MM-DD format and rejects out-of-range dates before opening the calendar
 - `wait-toast` validates `--timeout` is a positive integer
-
 ## 1.0.0
 
 - Initial release
