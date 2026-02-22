@@ -1,120 +1,245 @@
 # web-ctl
 
-Browser automation and web testing toolkit for AI agents. Headless browser control, persistent sessions, and human-in-the-loop auth handoff.
+Browser automation for AI agents - navigate, authenticate, and interact with web pages.
 
-## Install
+## Overview
 
-```bash
-agentsys install web-ctl
-```
-
-Requires [Playwright](https://playwright.dev/) as a peer dependency:
-
-```bash
-npm install playwright
-npx playwright install chromium
-```
+web-ctl gives agents persistent, session-based browser control through a single CLI. Agents navigate pages, fill forms, click buttons, and read content - all headlessly. When login or CAPTCHAs are needed, the browser opens for the human, then goes back to headless.
 
 ## Architecture
 
 ```
-SKILL.md -> node scripts/web-ctl.js <args> -> Playwright API
+/web-ctl
+    │
+    ├─→ /web-ctl:web-browse  → Headless actions (goto, click, type, read, snapshot)
+    └─→ /web-ctl:web-auth    → Human-in-the-loop auth (headed browser, polls for success)
 ```
 
-Each invocation is a single Node.js process. No daemon, no MCP server. Session state persists via Chrome's userDataDir with AES-256-GCM encrypted storage.
+```
+Agent
+ └─ Skill("web-ctl", "run github click 'role=button[name=Post]'")
+      └─ SKILL.md executes: node scripts/web-ctl.js run github click "..."
+           └─ web-ctl.js:
+                1. Loads session from state dir
+                2. Opens Playwright launchPersistentContext(userDataDir)
+                3. Executes action
+                4. Closes context (cookies flush to disk)
+                5. Returns JSON result to agent
+```
 
-## Command Reference
+Each invocation is a single Node.js process. No daemon, no MCP server, no IPC. Session state persists via Chrome's userDataDir with AES-256-GCM encrypted storage.
 
-### Session Management
+## Installation
 
 ```bash
-# Start a new session
-node scripts/web-ctl.js session start <name>
+# Claude Code
+agentsys install web-ctl
 
-# Authenticate (opens headed browser for human login)
-node scripts/web-ctl.js session auth <name> --url <login-url> [--success-url <url>] [--timeout <seconds>]
-
-# List sessions
-node scripts/web-ctl.js session list
-
-# Check session status
-node scripts/web-ctl.js session status <name>
-
-# End session
-node scripts/web-ctl.js session end <name>
-
-# Revoke session (delete all data)
-node scripts/web-ctl.js session revoke <name>
+# Peer dependency
+npm install playwright
+npx playwright install chromium
 ```
 
-### Browser Actions
+## Commands
+
+### `/web-ctl`
+
+Describe what you want to do; the web-session agent orchestrates multi-step browsing.
+
+```
+/web-ctl                    # Agent-driven browsing session
+/web-ctl goto <url>         # Navigate directly
+/web-ctl auth <name>        # Authenticate to a site
+```
+
+### `/web-ctl:web-auth`
+
+Human-in-the-loop authentication. Opens a headed browser for the user to complete login (including 2FA), then captures and encrypts the session.
+
+```
+/web-ctl:web-auth github --url https://github.com/login
+/web-ctl:web-auth twitter --url https://x.com/i/flow/login --success-url https://x.com/home
+```
+
+### `/web-ctl:web-browse`
+
+Headless browser actions for navigation and interaction.
+
+```
+/web-ctl:web-browse github goto https://github.com
+/web-ctl:web-browse github click "role=link[name='Settings']"
+/web-ctl:web-browse github click-wait "role=button[name='Save']"
+/web-ctl:web-browse github snapshot
+```
+
+## Session Lifecycle
 
 ```bash
-# Navigate to URL
-node scripts/web-ctl.js run <session> goto <url>
+# 1. Create session
+web-ctl session start github
 
-# Get accessibility tree snapshot
-node scripts/web-ctl.js run <session> snapshot
+# 2. Authenticate (opens headed browser, user logs in)
+web-ctl session auth github --url https://github.com/login --success-url https://github.com
 
-# Click element
-node scripts/web-ctl.js run <session> click <selector> [--wait-stable]
+# 3. Browse headlessly (session cookies persist across invocations)
+web-ctl run github goto https://github.com/settings
+web-ctl run github snapshot
+web-ctl run github click "role=link[name='Profile']"
 
-# Click and wait for page to settle (SPA-friendly)
-node scripts/web-ctl.js run <session> click-wait <selector> [--timeout <ms>]
-
-# Type text
-node scripts/web-ctl.js run <session> type <selector> <text>
-
-# Read element content
-node scripts/web-ctl.js run <session> read <selector>
-
-# Fill form field
-node scripts/web-ctl.js run <session> fill <selector> <value>
-
-# Wait for element
-node scripts/web-ctl.js run <session> wait <selector> [--timeout <ms>]
-
-# Execute JavaScript
-node scripts/web-ctl.js run <session> evaluate <js-code>
-
-# Take screenshot
-node scripts/web-ctl.js run <session> screenshot [--path <file>]
-
-# Get network requests
-node scripts/web-ctl.js run <session> network [--filter <pattern>]
-
-# Open headed checkpoint (for CAPTCHAs)
-node scripts/web-ctl.js run <session> checkpoint [--timeout <seconds>]
+# 4. End session
+web-ctl session end github
 ```
 
-### Selector Syntax
+## Action Reference
 
-- `role=button[name='Submit']` - ARIA role selector
-- `css=div.my-class` - CSS selector
-- `text=Click here` - Text content selector
-- `#my-id` - ID shorthand (becomes `css=#my-id`)
+| Action | Usage | Returns |
+|--------|-------|---------|
+| `goto` | `run <s> goto <url>` | `{ url, status, snapshot }` |
+| `snapshot` | `run <s> snapshot` | `{ url, snapshot }` |
+| `click` | `run <s> click <sel> [--wait-stable]` | `{ url, clicked, snapshot }` |
+| `click-wait` | `run <s> click-wait <sel> [--timeout]` | `{ url, clicked, settled, snapshot }` |
+| `type` | `run <s> type <sel> <text>` | `{ url, typed, selector, snapshot }` |
+| `read` | `run <s> read <sel>` | `{ url, selector, content }` |
+| `fill` | `run <s> fill <sel> <value>` | `{ url, filled, snapshot }` |
+| `wait` | `run <s> wait <sel> [--timeout]` | `{ url, found, snapshot }` |
+| `evaluate` | `run <s> evaluate <js>` | `{ url, result }` |
+| `screenshot` | `run <s> screenshot [--path]` | `{ url, path }` |
+| `network` | `run <s> network [--filter]` | `{ url, requests }` |
+| `checkpoint` | `run <s> checkpoint [--timeout]` | `{ url, message }` |
+
+### click vs click-wait
+
+`click` fires the click and captures a snapshot immediately. For SPAs where React/Vue re-renders asynchronously, use `click-wait` or `click --wait-stable` - these wait for network idle and DOM stability (no mutations for 500ms) before returning.
+
+This eliminates the common click-snapshot-check loop that wastes agent turns on dynamic pages.
+
+## Session Commands
+
+| Command | Usage | Description |
+|---------|-------|-------------|
+| `start` | `session start <name>` | Create new session |
+| `auth` | `session auth <name> --url <url>` | Human auth handoff |
+| `save` | `session save <name>` | Save session state |
+| `list` | `session list` | List all sessions |
+| `status` | `session status <name>` | Check session status |
+| `end` | `session end <name>` | Delete session |
+| `revoke` | `session revoke <name>` | Delete all session data |
+
+## Selector Syntax
+
+| Pattern | Example | Description |
+|---------|---------|-------------|
+| `role=` | `role=button[name='Submit']` | ARIA role with optional name |
+| `css=` | `css=div.composer textarea` | CSS selector |
+| `text=` | `text=Sign in` | Text content match |
+| `#id` | `#username` | ID shorthand |
+| (other) | `div.class` | Treated as CSS selector |
+
+## Common Flags
+
+| Flag | Applies To | Description |
+|------|-----------|-------------|
+| `--wait-stable` | `click` | Wait for DOM + network stability after click |
+| `--timeout <ms>` | `click-wait`, `wait`, `checkpoint` | Action timeout |
+| `--success-url <url>` | `session auth` | URL to detect auth completion |
+| `--success-selector <sel>` | `session auth` | DOM selector to detect auth completion |
+| `--vnc` | `session auth` | Use VNC for headed browser on remote servers |
+| `--filter <pattern>` | `network` | Filter captured requests by URL pattern |
+| `--path <file>` | `screenshot` | Custom screenshot path (within session dir) |
+| `--allow-evaluate` | `evaluate` | Required safety flag for JS execution |
 
 ## Error Handling
 
-All error responses include `error` (code), `message` (human-readable), `suggestion` (recovery action), and `snapshot` (current page state).
+All error responses include actionable recovery suggestions:
 
-| Error Code | Meaning | Suggested Recovery |
-|------------|---------|-------------------|
-| `element_not_found` | Selector didn't match | Use snapshot to find correct selector |
-| `timeout` | Action exceeded time limit | Increase `--timeout` |
-| `browser_closed` | Session crashed or timed out | `session start <name>` |
-| `network_error` | URL unreachable / DNS failure | Check URL and session cookies |
-| `no_display` | Headed mode needs a display | Use `--vnc` flag |
-| `session_expired` | Session TTL exceeded | Create new session, re-authenticate |
-| `action_error` | Other error | Check message and suggestion fields |
+```json
+{
+  "ok": false,
+  "error": "element_not_found",
+  "message": "Selector 'role=button[name=Save]' not found on current page.",
+  "suggestion": "Run: snapshot to see current page elements, then adjust selector",
+  "snapshot": "- heading 'Settings' [level=1]\n- button 'Cancel'\n- button 'Apply'"
+}
+```
+
+| Error Code | Meaning | Recovery |
+|------------|---------|----------|
+| `element_not_found` | Selector didn't match any element | Use snapshot in response to find correct selector |
+| `timeout` | Action exceeded time limit | Increase `--timeout` or verify page is loading |
+| `browser_closed` | Session crashed or timed out | `session start <name>` for fresh session |
+| `network_error` | URL unreachable / DNS failure | Check URL; verify cookies with `session status` |
+| `no_display` | Headed mode needs a display | Use `--vnc` flag or install xvfb |
+| `session_expired` | Session TTL exceeded | Create new session and re-authenticate |
+| `action_error` | Other Playwright error | Check `message` and `suggestion` fields |
+
+## Agents
+
+| Agent | Purpose | Model |
+|-------|---------|-------|
+| `web-session` | Orchestrate multi-step browsing workflows | sonnet |
+
+## Skills
+
+| Skill | Purpose |
+|-------|---------|
+| `web-browse` | Headless actions: goto, click, click-wait, snapshot, type, read, fill, wait, evaluate, screenshot, network, checkpoint |
+| `web-auth` | Human-in-the-loop auth: headed browser, polls for success URL/selector, encrypts session |
+
+## Auth Handoff Protocol
+
+1. `session auth <name> --url <login-url> --success-url <target>`
+2. Headed Chrome opens - user completes login (including 2FA)
+3. Script polls for success URL/selector
+4. On success: storageState captured, AES-256-GCM encrypted, context closed
+5. Next `run <name> goto ...` reuses the same userDataDir headlessly - cookies persist
+
+### CAPTCHA / Mid-Session Challenge
+
+```bash
+web-ctl run <session> checkpoint --reason captcha --timeout 120
+```
+
+Browser switches to headed mode. Agent pauses, tells user to interact. Script polls for resolution.
 
 ## Security Model
 
-- All web content is wrapped in `[PAGE_CONTENT: ...]` delimiters to prevent prompt injection
-- Session storage is AES-256-GCM encrypted at rest
-- Output sanitization strips cookies, tokens, and session IDs
-- Agent instructions explicitly mark web content as untrusted
-- No Write/Edit tools on the browsing agent (read-only)
+- **Prompt injection defense** - All web content wrapped in `[PAGE_CONTENT: ...]` delimiters; agent treats it as untrusted data
+- **Encryption at rest** - Session storage is AES-256-GCM encrypted (master key from OS keyring or HKDF fallback)
+- **Output sanitization** - `redact.js` strips cookies, tokens, session IDs, auth headers, URL credentials from all stdout
+- **Read-only agent** - The web-browse agent has no Write/Edit tools
+- **Anti-bot measures** - `navigator.webdriver = false`, `--disable-blink-features=AutomationControlled`, random action delays (200-800ms)
+- **Path traversal prevention** - Screenshot paths validated within session directory
+- **JS execution gated** - `evaluate` action requires explicit `--allow-evaluate` flag
+
+## Cross-Platform
+
+- **macOS/Linux** - System Chrome (`channel: 'chrome'`) with Playwright Chromium fallback
+- **WSL** - Auto-detects Windows Chrome at `/mnt/c/Program Files/Google/Chrome/Application/chrome.exe`
+- **Remote/CI** - `--vnc` flag for headed auth on headless servers (xvfb + x11vnc + novnc)
+- **State directory** - Platform-aware via `lib/platform/state-dir.js`
+
+## Output Format
+
+All commands return structured JSON:
+
+```json
+{ "ok": true,  "command": "run click", "session": "github", "result": { "url": "...", "clicked": "...", "snapshot": "..." } }
+{ "ok": false, "command": "run click", "session": "github", "error": "element_not_found", "message": "...", "suggestion": "...", "snapshot": "..." }
+```
+
+## Integration
+
+Can be invoked by:
+- Direct command: `/web-ctl`
+- Skills: `web-browse`, `web-auth`
+- Agent: `web-session` (multi-step orchestration)
+- Other plugins: any agent can call web-ctl scripts directly
+
+## Requirements
+
+- Node.js 18+
+- Playwright (`npm install playwright`)
+- Chromium (`npx playwright install chromium`)
 
 ## License
 
