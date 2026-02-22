@@ -50,10 +50,24 @@ Returns: `{ url, snapshot }`
 ### click - Click Element
 
 ```bash
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click <selector>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click <selector> [--wait-stable] [--timeout <ms>]
 ```
 
+With `--wait-stable`, waits for network idle + DOM stability before returning the snapshot. Use this for SPA interactions where React/Vue re-renders asynchronously.
+
 Returns: `{ url, clicked, snapshot }`
+
+### click-wait - Click and Wait for Page Settle
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click-wait <selector> [--timeout <ms>]
+```
+
+Clicks the element and waits for the page to stabilize (network idle + no DOM mutations for 500ms). Equivalent to `click --wait-stable`. Default timeout: 5000ms.
+
+Use this instead of separate click + snapshot when interacting with SPAs, menus, tabs, or any element that triggers asynchronous updates.
+
+Returns: `{ url, clicked, settled, snapshot }`
 
 ### type - Type Text
 
@@ -131,19 +145,23 @@ Opens a **headed browser** for user interaction (e.g., solving CAPTCHAs). Defaul
 
 ## Error Recovery
 
-When an action fails with `element_not_found`, the response includes a `snapshot` of the current accessibility tree. Use this to:
+All errors include a `suggestion` field with actionable next steps and a `snapshot` of the current page state. Error codes:
 
-1. Understand the current page state
-2. Find the correct selector for the element
-3. Retry with the correct selector
+| Error Code | Meaning | Recovery |
+|------------|---------|----------|
+| `element_not_found` | Selector didn't match any element | Use snapshot in response to find correct selector |
+| `timeout` | Action exceeded time limit | Increase `--timeout` or verify page is loading |
+| `browser_closed` | Session crashed or timed out | Run `session start <name>` for a fresh session |
+| `network_error` | URL unreachable or DNS failure | Check URL and session cookies |
+| `no_display` | Headed mode needs a display | Use `--vnc` flag |
+| `session_expired` | Session TTL exceeded | Create new session and re-authenticate |
+| `action_error` | Other Playwright error | Check suggestion field |
 
 Example recovery flow:
 
 ```bash
-# Action failed - check what's on the page
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run mysession snapshot
-
-# Found the element with a different name, retry
+# Action failed with element_not_found - snapshot is in the error response
+# Use it to find the correct selector, then retry
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run mysession click "role=button[name='Sign In']"
 ```
 
