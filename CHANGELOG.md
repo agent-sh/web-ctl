@@ -9,6 +9,7 @@
 - `login` macro supports `WEB_CTL_USER` / `WEB_CTL_PASS` environment variables as a safer alternative to CLI flags
 
 ### Fixed
+- Persist navigation state (`lastUrl`) between `run` commands so each invocation resumes at the last visited URL (#20)
 - Use `body` selector instead of `:root` for cleaner ariaSnapshot output (#19)
 - Log warning on ariaSnapshot failure instead of silently swallowing errors
 - Security hardening across macro implementations: input validation, path traversal prevention, credential hygiene

@@ -195,3 +195,44 @@ describe('waitForStable export', () => {
     assert.equal(typeof launcher.waitForStable, 'function');
   });
 });
+
+describe('web-ctl navigation state persistence', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const webCtlSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+    'utf8'
+  );
+
+  it('saves lastUrl before closeBrowser on success path', () => {
+    assert.ok(
+      webCtlSource.includes("sessionStore.updateSession(sessionName, { lastUrl: currentUrl })"),
+      'web-ctl.js must save lastUrl via updateSession before closing browser'
+    );
+  });
+
+  it('restores lastUrl for non-goto actions after browser launch', () => {
+    assert.ok(
+      webCtlSource.includes("action !== 'goto' && session.lastUrl"),
+      'web-ctl.js must check for lastUrl and restore it for non-goto actions'
+    );
+    assert.ok(
+      webCtlSource.includes("await page.goto(session.lastUrl"),
+      'web-ctl.js must navigate to session.lastUrl on restore'
+    );
+  });
+
+  it('validates lastUrl before restoring', () => {
+    assert.ok(
+      webCtlSource.includes("validateUrl(session.lastUrl)"),
+      'web-ctl.js must validate lastUrl scheme before navigating'
+    );
+  });
+
+  it('saves lastUrl in both success and error paths', () => {
+    const matches = webCtlSource.match(/sessionStore\.updateSession\(sessionName, \{ lastUrl: currentUrl \}\)/g);
+    assert.ok(matches && matches.length >= 2,
+      'web-ctl.js must save lastUrl in both success and error paths'
+    );
+  });
+});
