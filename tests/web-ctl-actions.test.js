@@ -196,6 +196,107 @@ describe('waitForStable export', () => {
   });
 });
 
+describe('snapshot option flag parsing', () => {
+  // Replicate parseOptions for unit testing
+  function parseOptions(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i].startsWith('--')) {
+        const key = args[i].slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        const next = args[i + 1];
+        if (next && !next.startsWith('--')) {
+          opts[key] = next;
+          i++;
+        } else {
+          opts[key] = true;
+        }
+      }
+    }
+    return opts;
+  }
+
+  it('parses --snapshot-depth as snapshotDepth', () => {
+    const opts = parseOptions(['--snapshot-depth', '3']);
+    assert.equal(opts.snapshotDepth, '3');
+  });
+
+  it('parses --no-snapshot as noSnapshot boolean', () => {
+    const opts = parseOptions(['--no-snapshot']);
+    assert.equal(opts.noSnapshot, true);
+  });
+
+  it('parses --snapshot-selector as snapshotSelector', () => {
+    const opts = parseOptions(['--snapshot-selector', 'css=nav']);
+    assert.equal(opts.snapshotSelector, 'css=nav');
+  });
+
+  it('parses all three flags together', () => {
+    const opts = parseOptions(['--snapshot-depth', '2', '--snapshot-selector', '#main']);
+    assert.equal(opts.snapshotDepth, '2');
+    assert.equal(opts.snapshotSelector, '#main');
+  });
+
+  it('combines snapshot flags with other flags', () => {
+    const opts = parseOptions(['--timeout', '5000', '--snapshot-depth', '4', '--no-snapshot']);
+    assert.equal(opts.timeout, '5000');
+    assert.equal(opts.snapshotDepth, '4');
+    assert.equal(opts.noSnapshot, true);
+  });
+});
+
+describe('snapshot options in web-ctl source', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const webCtlSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+    'utf8'
+  );
+
+  it('help text contains --snapshot-depth flag', () => {
+    assert.ok(webCtlSource.includes('--snapshot-depth'), 'help should document --snapshot-depth');
+  });
+
+  it('help text contains --snapshot-selector flag', () => {
+    assert.ok(webCtlSource.includes('--snapshot-selector'), 'help should document --snapshot-selector');
+  });
+
+  it('help text contains --no-snapshot flag', () => {
+    assert.ok(webCtlSource.includes('--no-snapshot'), 'help should document --no-snapshot');
+  });
+
+  it('help text contains Snapshot options section', () => {
+    assert.ok(webCtlSource.includes('Snapshot options'), 'help should have Snapshot options section');
+  });
+
+  it('getSnapshot accepts opts parameter', () => {
+    assert.ok(webCtlSource.includes('async function getSnapshot(page, opts'), 'getSnapshot should accept opts');
+  });
+
+  it('trimByDepth function exists', () => {
+    assert.ok(webCtlSource.includes('function trimByDepth(snapshot, maxDepth)'), 'trimByDepth should be defined');
+  });
+
+  it('snapshot action ignores noSnapshot', () => {
+    assert.ok(webCtlSource.includes("action === 'snapshot'") && webCtlSource.includes('delete opts.noSnapshot'),
+      'snapshot action should delete noSnapshot from opts');
+  });
+
+  it('validates snapshotDepth is positive integer', () => {
+    assert.ok(webCtlSource.includes('snapshotDepth') && webCtlSource.includes('positive integer'),
+      'should validate snapshotDepth');
+  });
+
+  it('uses spread pattern for conditional snapshot inclusion', () => {
+    assert.ok(webCtlSource.includes('...(snapshot != null && { snapshot })'),
+      'should use spread pattern for null snapshot exclusion');
+  });
+
+  it('curries getSnapshot for macro helpers', () => {
+    assert.ok(webCtlSource.includes('getSnapshot: (page) => getSnapshot(page, opts)'),
+      'macro helpers should curry getSnapshot with opts');
+  });
+});
+
 describe('web-ctl navigation state persistence', () => {
   const fs = require('fs');
   const path = require('path');

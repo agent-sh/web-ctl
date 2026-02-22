@@ -82,15 +82,63 @@ function resolveSelector(page, selector) {
 /**
  * Get accessibility tree snapshot formatted as text.
  * Uses Playwright's ariaSnapshot API (page.accessibility was removed in v1.50+).
+ *
+ * @param {object} page - Playwright page object
+ * @param {object} [opts={}] - Snapshot options
+ * @param {boolean} [opts.noSnapshot] - Return null to omit snapshot entirely
+ * @param {string} [opts.snapshotSelector] - Scope snapshot to a DOM subtree
+ * @param {number} [opts.snapshotDepth] - Limit ARIA tree depth
  */
-async function getSnapshot(page) {
+async function getSnapshot(page, opts = {}) {
+  if (opts.noSnapshot) return null;
   try {
-    return await page.locator('body').ariaSnapshot();
+    const root = opts.snapshotSelector
+      ? resolveSelector(page, opts.snapshotSelector)
+      : page.locator('body');
+    const raw = await root.ariaSnapshot();
+    return opts.snapshotDepth ? trimByDepth(raw, opts.snapshotDepth) : raw;
   } catch (e) {
     const msg = e?.message ?? String(e);
     console.warn('[WARN] ariaSnapshot failed:', msg);
     return `(accessibility tree unavailable - ${msg})`;
   }
+}
+
+/**
+ * Trim ARIA snapshot output by indentation depth.
+ * Lines at depth >= maxDepth are removed; truncation markers are inserted
+ * at the first cut point of each contiguous removed block.
+ *
+ * @param {string} snapshot - ARIA snapshot text
+ * @param {number} maxDepth - Maximum depth to keep (depth 0 = top-level)
+ * @returns {string} Trimmed snapshot
+ */
+function trimByDepth(snapshot, maxDepth) {
+  if (maxDepth == null || maxDepth === undefined) return snapshot;
+  if (typeof snapshot === 'string' && snapshot.startsWith('(')) return snapshot;
+
+  const lines = snapshot.split('\n');
+  const result = [];
+  let prevCut = false;
+
+  for (const line of lines) {
+    const stripped = line.replace(/^ */, '');
+    const spaces = line.length - stripped.length;
+    const depth = Math.floor(spaces / 2);
+
+    if (depth < maxDepth) {
+      result.push(line);
+      prevCut = false;
+    } else if (!prevCut) {
+      // Insert truncation marker at the parent's indentation + one level
+      const markerIndent = ' '.repeat(depth * 2);
+      result.push(`${markerIndent}- ...`);
+      prevCut = true;
+    }
+    // else: consecutive cut lines, skip (no duplicate markers)
+  }
+
+  return result.join('\n');
 }
 
 // ============ Session Commands ============
@@ -376,6 +424,24 @@ async function runAction(sessionName, action, actionArgs, opts) {
     return;
   }
 
+  // Validate and normalize snapshot options
+  if (opts.snapshotDepth != null) {
+    const depth = parseInt(opts.snapshotDepth, 10);
+    if (isNaN(depth) || depth <= 0) {
+      output({ ok: false, command: `run ${action}`, session: sessionName, error: 'invalid_option', message: '--snapshot-depth must be a positive integer' });
+      return;
+    }
+    opts.snapshotDepth = depth;
+  }
+  if (opts.snapshotSelector != null && (typeof opts.snapshotSelector !== 'string' || opts.snapshotSelector.length === 0 || opts.snapshotSelector === 'true')) {
+    output({ ok: false, command: `run ${action}`, session: sessionName, error: 'invalid_option', message: '--snapshot-selector requires a non-empty selector value' });
+    return;
+  }
+  // Explicit snapshot action should always produce a snapshot
+  if (action === 'snapshot') {
+    delete opts.noSnapshot;
+  }
+
   let context;
   let page;
 
@@ -404,14 +470,14 @@ async function runAction(sessionName, action, actionArgs, opts) {
         if (!url) throw new Error('URL required: run <session> goto <url>');
         validateUrl(url);
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        const snapshot = await getSnapshot(page);
-        result = { url: page.url(), status: response ? response.status() : null, snapshot };
+        const snapshot = await getSnapshot(page, opts);
+        result = { url: page.url(), status: response ? response.status() : null, ...(snapshot != null && { snapshot }) };
         break;
       }
 
       case 'snapshot': {
-        const snapshot = await getSnapshot(page);
-        result = { url: page.url(), snapshot };
+        const snapshot = await getSnapshot(page, opts);
+        result = { url: page.url(), ...(snapshot != null && { snapshot }) };
         break;
       }
 
@@ -426,8 +492,8 @@ async function runAction(sessionName, action, actionArgs, opts) {
         } else {
           await randomDelay();
         }
-        const snapshot = await getSnapshot(page);
-        result = { url: page.url(), clicked: selector, snapshot };
+        const snapshot = await getSnapshot(page, opts);
+        result = { url: page.url(), clicked: selector, ...(snapshot != null && { snapshot }) };
         break;
       }
 
@@ -438,8 +504,8 @@ async function runAction(sessionName, action, actionArgs, opts) {
         await locator.click({ timeout: 10000 });
         const stableTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 5000;
         await waitForStable(page, { timeout: stableTimeout });
-        const snapshot = await getSnapshot(page);
-        result = { url: page.url(), clicked: selector, settled: true, snapshot };
+        const snapshot = await getSnapshot(page, opts);
+        result = { url: page.url(), clicked: selector, settled: true, ...(snapshot != null && { snapshot }) };
         break;
       }
 
@@ -450,8 +516,8 @@ async function runAction(sessionName, action, actionArgs, opts) {
         const locator = resolveSelector(page, selector);
         await locator.type(text, { delay: 50 + Math.random() * 100 });
         await randomDelay();
-        const snapshot = await getSnapshot(page);
-        result = { url: page.url(), typed: '[INPUT]', selector, snapshot };
+        const snapshot = await getSnapshot(page, opts);
+        result = { url: page.url(), typed: '[INPUT]', selector, ...(snapshot != null && { snapshot }) };
         break;
       }
 
@@ -471,8 +537,8 @@ async function runAction(sessionName, action, actionArgs, opts) {
         const locator = resolveSelector(page, selector);
         await locator.fill(value);
         await randomDelay();
-        const snapshot = await getSnapshot(page);
-        result = { url: page.url(), filled: selector, snapshot };
+        const snapshot = await getSnapshot(page, opts);
+        result = { url: page.url(), filled: selector, ...(snapshot != null && { snapshot }) };
         break;
       }
 
@@ -482,8 +548,8 @@ async function runAction(sessionName, action, actionArgs, opts) {
         const timeout = opts.timeout ? parseInt(opts.timeout, 10) : 30000;
         const locator = resolveSelector(page, selector);
         await locator.waitFor({ state: 'visible', timeout });
-        const snapshot = await getSnapshot(page);
-        result = { url: page.url(), found: selector, snapshot };
+        const snapshot = await getSnapshot(page, opts);
+        result = { url: page.url(), found: selector, ...(snapshot != null && { snapshot }) };
         break;
       }
 
@@ -545,8 +611,10 @@ async function runAction(sessionName, action, actionArgs, opts) {
       default: {
         const macro = macros[action];
         if (macro) {
-          const helpers = { resolveSelector, waitForStable, randomDelay, getSnapshot, sanitizeWebContent };
+          const helpers = { resolveSelector, waitForStable, randomDelay, getSnapshot: (page) => getSnapshot(page, opts), sanitizeWebContent };
           result = await macro(page, actionArgs, opts, helpers);
+          // Clean up null snapshot from macros when --no-snapshot is active
+          if (result && result.snapshot === null) delete result.snapshot;
         } else {
           const allActions = ['goto', 'snapshot', 'click', 'click-wait', 'type', 'read', 'fill', 'wait', 'evaluate', 'screenshot', 'network', 'checkpoint', ...Object.keys(macros)];
           throw new Error(`Unknown action: ${action}. Available: ${allActions.join(', ')}`);
@@ -569,7 +637,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
   } catch (err) {
     let snapshot = null;
     if (page) {
-      try { snapshot = await getSnapshot(page); } catch { /* getSnapshot handles internally; guard against unexpected state */ }
+      try { snapshot = await getSnapshot(page, opts); } catch { /* getSnapshot handles internally; guard against unexpected state */ }
       try {
         const currentUrl = page.url();
         if (currentUrl && currentUrl !== 'about:blank') {
@@ -588,7 +656,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
       command: `run ${action}`,
       session: sessionName,
       ...classified,
-      snapshot
+      ...(snapshot != null && { snapshot })
     });
   }
 }
@@ -657,6 +725,11 @@ Macros (higher-level actions):
   iframe-action <sel> <action>  Perform action inside iframe
   login --user <u> --pass <p>   Auto-detect and fill login form
 
+Snapshot options (apply to any action that returns a snapshot):
+  --snapshot-depth <N>          Limit ARIA tree depth (e.g. 3 for top 3 levels)
+  --snapshot-selector <sel>     Scope snapshot to a DOM subtree
+  --no-snapshot                 Omit snapshot from output entirely
+
 Selector syntax:
   role=button[name='Submit']    ARIA role selector
   css=div.my-class              CSS selector
@@ -673,6 +746,9 @@ Examples:
   web-ctl run github click "role=link[name='Settings']"
   web-ctl run github click-wait "role=button[name='Save']"
   web-ctl run github click "role=tab[name='Code']" --wait-stable
+  web-ctl run github snapshot --snapshot-depth 3
+  web-ctl run github goto https://github.com --snapshot-selector "css=nav"
+  web-ctl run github click "#btn" --no-snapshot
   web-ctl session end github`);
 }
 
