@@ -63,8 +63,23 @@ async function checkAuthSuccess(page, context, originalUrl, options = {}) {
     }
   }
 
+  // 3.5. Check success by localStorage key
+  if (options.successLocalStorage) {
+    const { origin, key } = options.successLocalStorage;
+    try {
+      const value = await page.evaluate(({ storageKey }) => {
+        try { return localStorage.getItem(storageKey); } catch { return null; }
+      }, { storageKey: key });
+      if (value) {
+        return { success: true, currentUrl };
+      }
+    } catch {
+      // Ignore localStorage read errors (cross-origin, etc.)
+    }
+  }
+
   // 4. URL-change heuristic (only when no explicit success condition)
-  if (!options.successUrl && !options.successSelector && !options.successCookie) {
+  if (!options.successUrl && !options.successSelector && !options.successCookie && !options.successLocalStorage) {
     const excludePatterns = ['login', 'signin', 'auth', 'oauth', 'sso', 'error', 'failed'];
     if (currentUrl !== originalUrl && !excludePatterns.some(p => currentUrl.includes(p))) {
       return { success: true, currentUrl };
