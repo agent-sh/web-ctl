@@ -197,6 +197,11 @@ describe('waitForStable export', () => {
 });
 
 describe('snapshot option flag parsing', () => {
+  const BOOLEAN_FLAGS = new Set([
+    '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
+    '--exact', '--accept', '--submit', '--dismiss',
+  ]);
+
   // Replicate parseOptions for unit testing
   function parseOptions(args) {
     const opts = {};
@@ -204,7 +209,7 @@ describe('snapshot option flag parsing', () => {
       if (args[i].startsWith('--')) {
         const key = args[i].slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
         const next = args[i + 1];
-        if (next && !next.startsWith('--')) {
+        if (next && !next.startsWith('--') && !BOOLEAN_FLAGS.has(args[i])) {
           opts[key] = next;
           i++;
         } else {
@@ -214,6 +219,29 @@ describe('snapshot option flag parsing', () => {
     }
     return opts;
   }
+
+  it('--allow-evaluate does not consume next positional arg', () => {
+    const opts = parseOptions(['--allow-evaluate', 'document.title']);
+    assert.equal(opts.allowEvaluate, true);
+    assert.equal(opts['document.title'], undefined);
+  });
+
+  it('--no-snapshot does not consume next positional arg', () => {
+    const opts = parseOptions(['--no-snapshot', 'css=div']);
+    assert.equal(opts.noSnapshot, true);
+  });
+
+  it('non-boolean flags still consume next arg', () => {
+    const opts = parseOptions(['--timeout', '5000']);
+    assert.equal(opts.timeout, '5000');
+  });
+
+  it('boolean flags work alongside value-bearing flags', () => {
+    const opts = parseOptions(['--allow-evaluate', '--timeout', '3000', '--no-snapshot']);
+    assert.equal(opts.allowEvaluate, true);
+    assert.equal(opts.timeout, '3000');
+    assert.equal(opts.noSnapshot, true);
+  });
 
   it('parses --snapshot-depth as snapshotDepth', () => {
     const opts = parseOptions(['--snapshot-depth', '3']);
