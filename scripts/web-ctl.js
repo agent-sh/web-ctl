@@ -85,7 +85,7 @@ async function getSnapshot(page) {
   try {
     return await page.locator('body').ariaSnapshot();
   } catch (e) {
-    console.error('[WARN] ariaSnapshot failed:', e.message);
+    console.warn('[WARN] ariaSnapshot failed:', e?.message ?? String(e));
     return '(accessibility tree unavailable)';
   }
 }

@@ -5,12 +5,13 @@ const assert = require('node:assert/strict');
 
 // getSnapshot is not exported from web-ctl.js (CLI script), so we replicate
 // the function here for unit testing - same pattern as web-ctl-actions.test.js.
+// Keep this in sync with scripts/web-ctl.js:getSnapshot.
 
 async function getSnapshot(page) {
   try {
     return await page.locator('body').ariaSnapshot();
   } catch (e) {
-    console.error('[WARN] ariaSnapshot failed:', e.message);
+    console.warn('[WARN] ariaSnapshot failed:', e?.message ?? String(e));
     return '(accessibility tree unavailable)';
   }
 }
@@ -29,27 +30,45 @@ describe('getSnapshot', () => {
     assert.equal(result, '- heading "Example" [level=1]\n- link "More"');
   });
 
-  it('returns fallback when ariaSnapshot throws', async () => {
-    const mockPage = {
-      locator() {
-        return {
-          ariaSnapshot: async () => { throw new Error('page crashed'); }
-        };
-      }
-    };
-    const result = await getSnapshot(mockPage);
-    assert.equal(result, '(accessibility tree unavailable)');
+  it('returns fallback and logs warning when ariaSnapshot throws', async () => {
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => warnings.push(args);
+    try {
+      const mockPage = {
+        locator() {
+          return {
+            ariaSnapshot: async () => { throw new Error('page crashed'); }
+          };
+        }
+      };
+      const result = await getSnapshot(mockPage);
+      assert.equal(result, '(accessibility tree unavailable)');
+      assert.equal(warnings.length, 1);
+      assert.equal(warnings[0][0], '[WARN] ariaSnapshot failed:');
+      assert.equal(warnings[0][1], 'page crashed');
+    } finally {
+      console.warn = origWarn;
+    }
   });
 
-  it('uses body selector not :root', async () => {
-    let usedSelector = null;
-    const mockPage = {
-      locator(selector) {
-        usedSelector = selector;
-        return { ariaSnapshot: async () => '' };
-      }
-    };
-    await getSnapshot(mockPage);
-    assert.equal(usedSelector, 'body');
+  it('handles non-Error thrown values', async () => {
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => warnings.push(args);
+    try {
+      const mockPage = {
+        locator() {
+          return {
+            ariaSnapshot: async () => { throw 'string error'; }
+          };
+        }
+      };
+      const result = await getSnapshot(mockPage);
+      assert.equal(result, '(accessibility tree unavailable)');
+      assert.equal(warnings[0][1], 'string error');
+    } finally {
+      console.warn = origWarn;
+    }
   });
 });
