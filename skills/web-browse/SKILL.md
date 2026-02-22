@@ -133,6 +133,130 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> checkpoint [--timeout <seco
 
 Opens a **headed browser** for user interaction (e.g., solving CAPTCHAs). Default timeout: 120s. Tell the user a browser window is open.
 
+## Macros - Higher-Level Actions
+
+Macros compose primitive actions into common UI patterns. They auto-detect elements, handle waits, and return snapshots.
+
+### select-option - Pick from Dropdown
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> select-option <trigger-selector> <option-text> [--exact]
+```
+
+Clicks the trigger to open a dropdown, then selects the option by text. Use `--exact` for exact text matching.
+
+Returns: `{ url, selected, snapshot }`
+
+### tab-switch - Switch Tab
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> tab-switch <tab-name> [--wait-for <selector>]
+```
+
+Clicks a tab by its accessible name. Optionally waits for a selector to appear after switching.
+
+Returns: `{ url, tab, snapshot }`
+
+### modal-dismiss - Dismiss Modal/Dialog
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> modal-dismiss [--accept] [--selector <selector>]
+```
+
+Auto-detects visible modals (dialogs, overlays, cookie banners) and clicks the dismiss button. Use `--accept` to click accept/agree instead of close/dismiss.
+
+Returns: `{ url, dismissed, snapshot }`
+
+### form-fill - Fill Form by Labels
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> form-fill --fields '{"Email": "user@example.com", "Name": "Jane"}' [--submit] [--submit-text <text>]
+```
+
+Fills form fields by their labels. Auto-detects input types (text, select, checkbox, radio). Use `--submit` to click the submit button after filling.
+
+Returns: `{ url, filled, snapshot }`
+
+### search-select - Search and Pick
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> search-select <input-selector> <query> --pick <text>
+```
+
+Types a search query into an input, waits for suggestions, then clicks the matching option.
+
+Returns: `{ url, query, picked, snapshot }`
+
+### date-pick - Pick Date from Calendar
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> date-pick <input-selector> --date <YYYY-MM-DD>
+```
+
+Opens a date picker, navigates to the target month/year, and clicks the target day.
+
+Returns: `{ url, date, snapshot }`
+
+### file-upload - Upload File
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> file-upload <selector> <file-path> [--wait-for <selector>]
+```
+
+Uploads a file to a file input element. Optionally waits for a success indicator.
+
+Returns: `{ url, uploaded, snapshot }`
+
+### hover-reveal - Hover and Click Hidden Element
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> hover-reveal <trigger-selector> --click <target-selector>
+```
+
+Hovers over a trigger element to reveal hidden content, then clicks the target.
+
+Returns: `{ url, hovered, clicked, snapshot }`
+
+### scroll-to - Scroll Element Into View
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> scroll-to <selector> [--container <selector>]
+```
+
+Scrolls an element into view with retry logic for lazy-loaded content (up to 10 attempts).
+
+Returns: `{ url, scrolledTo, snapshot }`
+
+### wait-toast - Wait for Toast/Notification
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> wait-toast [--timeout <ms>] [--dismiss]
+```
+
+Polls for toast notifications (role=alert, role=status, toast/snackbar classes). Returns the toast text. Use `--dismiss` to click the dismiss button.
+
+Returns: `{ url, toast, snapshot }`
+
+### iframe-action - Act Inside Iframe
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> iframe-action <iframe-selector> <action> [args]
+```
+
+Performs an action (click, fill, read) inside an iframe. Actions use the same selector syntax as top-level actions.
+
+Returns: `{ url, iframe, ..., snapshot }`
+
+### login - Auto-Detect Login Form
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> login --user <username> --pass <password> [--success-selector <selector>]
+```
+
+Auto-detects username and password fields, fills them, finds and clicks the submit button. Use `--success-selector` to wait for a post-login element.
+
+Returns: `{ url, loggedIn, snapshot }`
+
 ## Selector Syntax
 
 | Pattern | Example | Description |

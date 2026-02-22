@@ -159,6 +159,36 @@ describe('click-wait action recognition', () => {
   });
 });
 
+describe('macros integration in web-ctl', () => {
+  it('web-ctl.js imports macros module', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'web-ctl.js'), 'utf8');
+    assert.ok(source.includes("require('./macros')"), 'should import macros');
+  });
+
+  it('default case delegates to macro map', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'web-ctl.js'), 'utf8');
+    assert.ok(source.includes('macros[action]'), 'default case should check macro map');
+  });
+
+  it('help text includes macros section', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'web-ctl.js'), 'utf8');
+    assert.ok(source.includes('Macros (higher-level actions):'), 'help should list macros');
+  });
+
+  it('error message includes macro names in available actions', () => {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'web-ctl.js'), 'utf8');
+    assert.ok(source.includes('...Object.keys(macros)'), 'error should list macro names');
+  });
+});
+
 describe('waitForStable export', () => {
   it('is exported from browser-launcher', () => {
     const launcher = require('../scripts/browser-launcher');
