@@ -42,10 +42,16 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js session start <name>
 
 ### 2. Authenticate if Needed
 
-If the target site requires login, prefer `--provider` for known sites (github, google, microsoft, x, reddit, discord, slack, linkedin, gitlab, atlassian, aws-console, notion):
+If the target site requires login, prefer `--provider` for known sites (github, google, microsoft, x (alias: twitter), reddit, discord, slack, linkedin, gitlab, atlassian, aws-console (alias: aws), notion):
 
 ```
 Use Skill: web-auth <session-name> --provider <provider>
+```
+
+For custom or self-hosted providers, load a JSON providers file:
+
+```
+Use Skill: web-auth <session-name> --provider <slug> --providers-file ./custom-providers.json
 ```
 
 For unknown sites, specify the URL manually:
@@ -53,6 +59,8 @@ For unknown sites, specify the URL manually:
 ```
 Use Skill: web-auth <session-name> --url <login-url>
 ```
+
+To list available providers: `node ${PLUGIN_ROOT}/scripts/web-ctl.js session providers`
 
 Tell the user a browser window will open for them to log in.
 

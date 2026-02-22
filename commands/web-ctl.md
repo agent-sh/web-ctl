@@ -41,6 +41,7 @@ For complex requests like "find information on a website" or "fill out a form":
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session start <name>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <name> --provider <provider>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <name> --url <url>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <name> --provider <slug> --providers-file <path>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session providers
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session list
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session end <name>

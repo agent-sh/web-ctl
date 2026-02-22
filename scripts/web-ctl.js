@@ -485,6 +485,8 @@ Session commands:
     [--provider <name>]         Use pre-built provider (sets url, success checks)
     [--success-url <url>]       URL to detect auth completion
     [--success-selector <sel>]  DOM selector to detect auth completion
+    [--success-cookie <json>]   Cookie presence to detect auth completion
+    [--providers-file <path>]   Load custom providers from JSON file
     [--timeout <seconds>]       Timeout in seconds (default: 300)
   providers                     List available auth providers
   save <name>                   Save session state
