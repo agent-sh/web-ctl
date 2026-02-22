@@ -270,6 +270,43 @@ describe('snapshot option flag parsing', () => {
     assert.equal(opts.snapshotDepth, '4');
     assert.equal(opts.noSnapshot, true);
   });
+
+  // Replicate cleanArgs extraction for unit testing
+  function extractCleanArgs(args, startIndex) {
+    const cleanArgs = [];
+    for (let i = startIndex; i < args.length; i++) {
+      if (args[i].startsWith('--')) {
+        if (args[i + 1] && !args[i + 1].startsWith('--') && !BOOLEAN_FLAGS.has(args[i])) i++;
+      } else {
+        cleanArgs.push(args[i]);
+      }
+    }
+    return cleanArgs;
+  }
+
+  it('cleanArgs extracts positional args after boolean flags', () => {
+    const args = ['session', 'evaluate', '--allow-evaluate', 'document.title'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['document.title']);
+  });
+
+  it('cleanArgs skips value-bearing flag values', () => {
+    const args = ['session', 'click', '--timeout', '5000', 'css=button'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['css=button']);
+  });
+
+  it('cleanArgs handles mixed boolean and value flags', () => {
+    const args = ['session', 'click', '--wait-stable', '--timeout', '3000', 'css=button'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['css=button']);
+  });
+
+  it('cleanArgs handles multiple consecutive boolean flags', () => {
+    const args = ['session', 'evaluate', '--allow-evaluate', '--no-snapshot', 'document.body.innerText'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['document.body.innerText']);
+  });
 });
 
 describe('snapshot options in web-ctl source', () => {
