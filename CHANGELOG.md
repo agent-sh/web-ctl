@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+- Add `session verify` command to check if session is still authenticated
+- Support `--provider` flag for verify command to use pre-configured success detection
+- Return structured JSON responses for session verification (authenticated status, error codes, expiry detection)
+
 ## 1.0.0
 
 - Initial release
