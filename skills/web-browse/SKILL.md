@@ -203,7 +203,7 @@ Returns: `{ url, date, snapshot }`
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> file-upload <selector> <file-path> [--wait-for <selector>]
 ```
 
-Uploads a file to a file input element. Optionally waits for a success indicator.
+Uploads a file to a file input element. File path must be within `/tmp`, the working directory, or `WEB_CTL_UPLOAD_DIR`. Dotfiles are blocked. Optionally waits for a success indicator.
 
 Returns: `{ url, uploaded, snapshot }`
 
