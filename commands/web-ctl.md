@@ -54,6 +54,11 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click <selector>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> read <selector>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> screenshot
 
+# Snapshot control (apply to any action with snapshot output)
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-depth 3
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> --snapshot-selector "css=nav"
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click <sel> --no-snapshot
+
 # Macros
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> select-option <sel> <text>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> tab-switch <name>
