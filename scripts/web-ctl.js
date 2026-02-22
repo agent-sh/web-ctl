@@ -87,8 +87,9 @@ async function getSnapshot(page) {
   try {
     return await page.locator('body').ariaSnapshot();
   } catch (e) {
-    console.warn('[WARN] ariaSnapshot failed:', e?.message ?? String(e));
-    return '(accessibility tree unavailable)';
+    const msg = e?.message ?? String(e);
+    console.warn('[WARN] ariaSnapshot failed:', msg);
+    return `(accessibility tree unavailable - ${msg})`;
   }
 }
 
@@ -568,7 +569,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
   } catch (err) {
     let snapshot = null;
     if (page) {
-      try { snapshot = await getSnapshot(page); } catch { /* ignore */ }
+      snapshot = await getSnapshot(page);
       try {
         const currentUrl = page.url();
         if (currentUrl && currentUrl !== 'about:blank') {
