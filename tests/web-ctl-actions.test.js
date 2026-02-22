@@ -197,6 +197,11 @@ describe('waitForStable export', () => {
 });
 
 describe('snapshot option flag parsing', () => {
+  const BOOLEAN_FLAGS = new Set([
+    '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
+    '--exact', '--accept', '--submit', '--dismiss',
+  ]);
+
   // Replicate parseOptions for unit testing
   function parseOptions(args) {
     const opts = {};
@@ -204,7 +209,7 @@ describe('snapshot option flag parsing', () => {
       if (args[i].startsWith('--')) {
         const key = args[i].slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
         const next = args[i + 1];
-        if (next && !next.startsWith('--')) {
+        if (next && !next.startsWith('--') && !BOOLEAN_FLAGS.has(args[i])) {
           opts[key] = next;
           i++;
         } else {
@@ -214,6 +219,27 @@ describe('snapshot option flag parsing', () => {
     }
     return opts;
   }
+
+  it('no boolean flag consumes next positional arg', () => {
+    assert.ok(BOOLEAN_FLAGS.size > 0, 'BOOLEAN_FLAGS should not be empty');
+    for (const flag of BOOLEAN_FLAGS) {
+      const key = flag.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      const opts = parseOptions([flag, 'positional-value']);
+      assert.equal(opts[key], true, `${flag} should be boolean true`);
+    }
+  });
+
+  it('non-boolean flags still consume next arg', () => {
+    const opts = parseOptions(['--timeout', '5000']);
+    assert.equal(opts.timeout, '5000');
+  });
+
+  it('boolean flags work alongside value-bearing flags', () => {
+    const opts = parseOptions(['--allow-evaluate', '--timeout', '3000', '--no-snapshot']);
+    assert.equal(opts.allowEvaluate, true);
+    assert.equal(opts.timeout, '3000');
+    assert.equal(opts.noSnapshot, true);
+  });
 
   it('parses --snapshot-depth as snapshotDepth', () => {
     const opts = parseOptions(['--snapshot-depth', '3']);
@@ -241,6 +267,55 @@ describe('snapshot option flag parsing', () => {
     assert.equal(opts.timeout, '5000');
     assert.equal(opts.snapshotDepth, '4');
     assert.equal(opts.noSnapshot, true);
+  });
+
+  // Replicate cleanArgs extraction for unit testing
+  function extractCleanArgs(args, startIndex) {
+    const cleanArgs = [];
+    for (let i = startIndex; i < args.length; i++) {
+      if (args[i].startsWith('--')) {
+        if (args[i + 1] && !args[i + 1].startsWith('--') && !BOOLEAN_FLAGS.has(args[i])) i++;
+      } else {
+        cleanArgs.push(args[i]);
+      }
+    }
+    return cleanArgs;
+  }
+
+  it('cleanArgs extracts positional args after boolean flags', () => {
+    const args = ['session', 'evaluate', '--allow-evaluate', 'document.title'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['document.title']);
+  });
+
+  it('cleanArgs skips value-bearing flag values', () => {
+    const args = ['session', 'click', '--timeout', '5000', 'css=button'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['css=button']);
+  });
+
+  it('cleanArgs handles mixed boolean and value flags', () => {
+    const args = ['session', 'click', '--wait-stable', '--timeout', '3000', 'css=button'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['css=button']);
+  });
+
+  it('cleanArgs handles multiple consecutive boolean flags', () => {
+    const args = ['session', 'evaluate', '--allow-evaluate', '--no-snapshot', 'document.body.innerText'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['document.body.innerText']);
+  });
+
+  it('cleanArgs handles boolean flag at end of args', () => {
+    const args = ['session', 'evaluate', 'code', '--allow-evaluate'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['code']);
+  });
+
+  it('cleanArgs handles multiple value-bearing flags', () => {
+    const args = ['session', 'click', '--timeout', '5000', '--path', '/tmp/file', 'css=button'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['css=button']);
   });
 });
 

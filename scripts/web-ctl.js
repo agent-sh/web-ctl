@@ -16,6 +16,11 @@ const [,, ...args] = process.argv;
 const SESSION_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const ALLOWED_SCHEMES = /^https?:\/\//i;
 
+const BOOLEAN_FLAGS = new Set([
+  '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
+  '--exact', '--accept', '--submit', '--dismiss',
+]);
+
 function validateSessionName(name) {
   if (!name || !SESSION_NAME_RE.test(name)) {
     throw new Error(`Invalid session name "${name}". Use only letters, numbers, hyphens, underscores (max 64 chars).`);
@@ -38,7 +43,7 @@ function parseOptions(args) {
     if (args[i].startsWith('--')) {
       const key = args[i].slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
       const next = args[i + 1];
-      if (next && !next.startsWith('--')) {
+      if (next && !next.startsWith('--') && !BOOLEAN_FLAGS.has(args[i])) {
         opts[key] = next;
         i++;
       } else {
@@ -815,7 +820,7 @@ async function main() {
     for (let i = 3; i < args.length; i++) {
       if (args[i].startsWith('--')) {
         // Skip option and its value
-        if (args[i + 1] && !args[i + 1].startsWith('--')) i++;
+        if (args[i + 1] && !args[i + 1].startsWith('--') && !BOOLEAN_FLAGS.has(args[i])) i++;
       } else {
         cleanArgs.push(args[i]);
       }

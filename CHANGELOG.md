@@ -12,6 +12,7 @@
 - `login` macro supports `WEB_CTL_USER` / `WEB_CTL_PASS` environment variables as a safer alternative to CLI flags
 
 ### Fixed
+- Boolean flags (`--allow-evaluate`, `--no-snapshot`, `--wait-stable`, `--vnc`, `--exact`, `--accept`, `--submit`, `--dismiss`) no longer consume the next positional argument as their value (#27)
 - `getSnapshot` fallback string now includes the error message (e.g. `(accessibility tree unavailable - <reason>)`) instead of the opaque `(accessibility tree unavailable)`, making snapshot failures easier to diagnose (#22)
 - Persist navigation state (`lastUrl`) between `run` commands so each invocation resumes at the last visited URL (#20)
 - Use `body` selector instead of `:root` for cleaner ariaSnapshot output (#19)
