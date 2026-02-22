@@ -3,6 +3,7 @@
 const { spawn, execFileSync } = require('child_process');
 const { launchBrowser, closeBrowser } = require('./browser-launcher');
 const sessionStore = require('./session-store');
+const { checkAuthSuccess } = require('./auth-check');
 const net = require('net');
 
 /**
@@ -69,11 +70,13 @@ function getHostname() {
 /**
  * Clean up all spawned processes and session state.
  */
-async function cleanup(sessionName, context, procs) {
+async function cleanup(sessionName, context, procs, { authenticated = false } = {}) {
   if (context) {
     try { await closeBrowser(sessionName, context); } catch { /* ignore */ }
   }
-  try { sessionStore.updateSession(sessionName, { status: 'authenticated' }); } catch { /* ignore */ }
+  if (authenticated) {
+    try { sessionStore.updateSession(sessionName, { status: 'authenticated' }); } catch { /* ignore */ }
+  }
   try { sessionStore.unlockSession(sessionName); } catch { /* ignore */ }
 
   for (const proc of procs) {
@@ -164,41 +167,15 @@ async function runVncAuth(sessionName, url, options = {}) {
     const procs = [websockifyProc, x11vncProc, xvfbProc];
 
     while (Date.now() - startTime < timeout) {
-      if (options.successUrl) {
-        const currentUrl = page.url();
-        if (currentUrl.startsWith(options.successUrl)) {
-          await cleanup(sessionName, context, procs);
-          return { ok: true, session: sessionName, url: currentUrl, ...info };
-        }
-      }
+      const result = await checkAuthSuccess(page, context, url, {
+        successUrl: options.successUrl,
+        successSelector: options.successSelector,
+        successCookie: options.successCookie
+      });
 
-      if (options.successSelector) {
-        const el = await page.$(options.successSelector);
-        if (el) {
-          const isValid = await el.evaluate(node => {
-            if (node.tagName === 'META' && node.hasAttribute('content')) {
-              return node.getAttribute('content').trim().length > 0;
-            }
-            return true;
-          }).catch(() => false);
-          if (isValid) {
-            const currentUrl = page.url();
-            await cleanup(sessionName, context, procs);
-            return { ok: true, session: sessionName, url: currentUrl, ...info };
-          }
-        }
-      }
-
-      if (!options.successUrl && !options.successSelector) {
-        const currentUrl = page.url();
-        if (currentUrl !== url && !currentUrl.includes('login') && !currentUrl.includes('signin')) {
-          const cookies = await context.cookies('https://github.com');
-          const loggedIn = cookies.find(c => c.name === 'logged_in' && c.value === 'yes');
-          if (loggedIn || !currentUrl.includes('github.com')) {
-            await cleanup(sessionName, context, procs);
-            return { ok: true, session: sessionName, url: currentUrl, ...info };
-          }
-        }
+      if (result.success) {
+        await cleanup(sessionName, context, procs, { authenticated: true });
+        return { ok: true, session: sessionName, url: result.currentUrl, ...info };
       }
 
       await new Promise(resolve => setTimeout(resolve, pollInterval));

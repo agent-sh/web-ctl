@@ -3,6 +3,7 @@
 const { launchBrowser, closeBrowser, canLaunchHeaded } = require('./browser-launcher');
 const sessionStore = require('./session-store');
 const { runVncAuth, isVncAvailable } = require('./vnc-auth');
+const { checkAuthSuccess } = require('./auth-check');
 
 const CAPTCHA_SELECTORS = [
   'iframe[src*="arkose"]',
@@ -20,16 +21,20 @@ const CAPTCHA_TEXT_PATTERNS = [
 
 /**
  * Detect if a CAPTCHA is present on the page.
+ * Accepts optional extra selectors and text patterns from providers.
  */
-async function detectCaptcha(page) {
-  for (const selector of CAPTCHA_SELECTORS) {
+async function detectCaptcha(page, extraSelectors, extraTextPatterns) {
+  const selectors = [...CAPTCHA_SELECTORS, ...(extraSelectors || [])];
+  const textPatterns = [...CAPTCHA_TEXT_PATTERNS, ...(extraTextPatterns || [])];
+
+  for (const selector of selectors) {
     const el = await page.$(selector);
     if (el) return true;
   }
 
   try {
     const text = (await page.textContent('body')).toLowerCase();
-    for (const pattern of CAPTCHA_TEXT_PATTERNS) {
+    for (const pattern of textPatterns) {
       if (text.includes(pattern)) return true;
     }
   } catch {
@@ -47,8 +52,8 @@ async function detectCaptcha(page) {
  *
  * @param {string} sessionName
  * @param {string} url - Auth/login URL
- * @param {object} options - { successUrl, successSelector, timeout }
- * @returns {{ ok, session, error, captchaDetected }}
+ * @param {object} options - { successUrl, successSelector, successCookie, timeout, captchaSelectors, captchaTextPatterns, twoFactorHint }
+ * @returns {{ ok, session, error, captchaDetected, twoFactorHint }}
  */
 async function runAuthFlow(sessionName, url, options = {}) {
   // Force VNC mode
@@ -88,72 +93,36 @@ async function runAuthFlow(sessionName, url, options = {}) {
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
-      // Check success by URL
-      if (options.successUrl) {
-        const currentUrl = page.url();
-        if (currentUrl.startsWith(options.successUrl)) {
-          await closeBrowser(sessionName, context);
-          sessionStore.updateSession(sessionName, { status: 'authenticated' });
-          sessionStore.unlockSession(sessionName);
-          return { ok: true, session: sessionName, url: currentUrl };
-        }
-      }
+      const result = await checkAuthSuccess(page, context, url, {
+        successUrl: options.successUrl,
+        successSelector: options.successSelector,
+        successCookie: options.successCookie
+      });
 
-      // Check success by DOM selector
-      if (options.successSelector) {
-        const el = await page.$(options.successSelector);
-        if (el) {
-          // For attribute selectors, verify the attribute has a non-empty value
-          const isValid = await el.evaluate(node => {
-            // Check common auth indicators - meta tags with content, visible elements
-            if (node.tagName === 'META' && node.hasAttribute('content')) {
-              return node.getAttribute('content').trim().length > 0;
-            }
-            return true;
-          }).catch(() => false);
-
-          if (isValid) {
-            const currentUrl = page.url();
-            await closeBrowser(sessionName, context);
-            sessionStore.updateSession(sessionName, { status: 'authenticated' });
-            sessionStore.unlockSession(sessionName);
-            return { ok: true, session: sessionName, url: currentUrl };
-          }
-        }
-      }
-
-      // Check for CAPTCHA
-      const hasCaptcha = await detectCaptcha(page);
-      if (hasCaptcha) {
-        // Don't fail — user might solve it. Just note it.
-      }
-
-      // If no success condition given, check if URL changed from login page
-      if (!options.successUrl && !options.successSelector) {
-        const currentUrl = page.url();
-        if (currentUrl !== url && !currentUrl.includes('login') && !currentUrl.includes('signin')) {
-          await closeBrowser(sessionName, context);
-          sessionStore.updateSession(sessionName, { status: 'authenticated' });
-          sessionStore.unlockSession(sessionName);
-          return { ok: true, session: sessionName, url: currentUrl };
-        }
+      if (result.success) {
+        await closeBrowser(sessionName, context);
+        sessionStore.updateSession(sessionName, { status: 'authenticated' });
+        sessionStore.unlockSession(sessionName);
+        return { ok: true, session: sessionName, url: result.currentUrl };
       }
 
       await new Promise(resolve => setTimeout(resolve, pollInterval));
     }
 
     // Timeout
-    const captchaDetected = await detectCaptcha(page);
+    const captchaDetected = await detectCaptcha(page, options.captchaSelectors, options.captchaTextPatterns);
     await closeBrowser(sessionName, context);
     sessionStore.unlockSession(sessionName);
 
-    return {
+    const timeoutResult = {
       ok: false,
       session: sessionName,
       error: 'auth_timeout',
       message: `Auth timed out after ${options.timeout || 300} seconds`,
       captchaDetected
     };
+    if (options.twoFactorHint) timeoutResult.twoFactorHint = options.twoFactorHint;
+    return timeoutResult;
   } catch (err) {
     if (context) {
       try { await closeBrowser(sessionName, context); } catch { /* ignore */ }

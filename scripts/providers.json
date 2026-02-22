@@ -1,0 +1,112 @@
+[
+  {
+    "slug": "github",
+    "name": "GitHub",
+    "loginUrl": "https://github.com/login",
+    "successCookie": { "domain": ".github.com", "name": "logged_in", "value": "yes" },
+    "captchaSelectors": [],
+    "captchaTextPatterns": [],
+    "twoFactorHint": "GitHub may prompt for a 2FA code or passkey."
+  },
+  {
+    "slug": "google",
+    "name": "Google",
+    "loginUrl": "https://accounts.google.com",
+    "successCookie": { "domain": ".google.com", "name": "SAPISID" },
+    "captchaSelectors": ["iframe[src*=\"recaptcha\"]"],
+    "captchaTextPatterns": ["verify it's you"],
+    "twoFactorHint": "Google may prompt for a phone verification or authenticator code."
+  },
+  {
+    "slug": "microsoft",
+    "name": "Microsoft",
+    "loginUrl": "https://login.microsoftonline.com",
+    "successUrl": "https://www.office.com",
+    "captchaSelectors": [],
+    "captchaTextPatterns": [],
+    "twoFactorHint": "Microsoft may prompt for Authenticator app approval or SMS code."
+  },
+  {
+    "slug": "x",
+    "name": "X (Twitter)",
+    "aliases": ["twitter"],
+    "loginUrl": "https://x.com/i/flow/login",
+    "successUrl": "https://x.com/home",
+    "captchaSelectors": ["iframe[src*=\"arkose\"]"],
+    "captchaTextPatterns": [],
+    "twoFactorHint": "X may prompt for an authentication code."
+  },
+  {
+    "slug": "reddit",
+    "name": "Reddit",
+    "loginUrl": "https://www.reddit.com/login",
+    "successCookie": { "domain": ".reddit.com", "name": "reddit_session" },
+    "captchaSelectors": ["iframe[src*=\"recaptcha\"]", "iframe[src*=\"hcaptcha\"]"],
+    "captchaTextPatterns": [],
+    "twoFactorHint": "Reddit may prompt for a 2FA code."
+  },
+  {
+    "slug": "discord",
+    "name": "Discord",
+    "loginUrl": "https://discord.com/login",
+    "successUrl": "https://discord.com/channels",
+    "captchaSelectors": ["iframe[src*=\"hcaptcha\"]"],
+    "captchaTextPatterns": [],
+    "twoFactorHint": "Discord may prompt for an authenticator or SMS code."
+  },
+  {
+    "slug": "slack",
+    "name": "Slack",
+    "loginUrl": "https://slack.com/signin",
+    "successUrl": "https://app.slack.com",
+    "captchaSelectors": [],
+    "captchaTextPatterns": [],
+    "twoFactorHint": "Slack may prompt for a 2FA code."
+  },
+  {
+    "slug": "linkedin",
+    "name": "LinkedIn",
+    "loginUrl": "https://www.linkedin.com/login",
+    "successCookie": { "domain": ".linkedin.com", "name": "li_at" },
+    "captchaSelectors": ["iframe[src*=\"captcha\"]"],
+    "captchaTextPatterns": ["security verification"],
+    "twoFactorHint": "LinkedIn may prompt for a verification code sent to your email or phone."
+  },
+  {
+    "slug": "gitlab",
+    "name": "GitLab",
+    "loginUrl": "https://gitlab.com/users/sign_in",
+    "successCookie": { "domain": ".gitlab.com", "name": "_gitlab_session" },
+    "captchaSelectors": [],
+    "captchaTextPatterns": [],
+    "twoFactorHint": "GitLab may prompt for a 2FA code."
+  },
+  {
+    "slug": "atlassian",
+    "name": "Atlassian",
+    "loginUrl": "https://id.atlassian.com",
+    "successUrl": "https://start.atlassian.com",
+    "captchaSelectors": [],
+    "captchaTextPatterns": [],
+    "twoFactorHint": "Atlassian may prompt for a verification code."
+  },
+  {
+    "slug": "aws-console",
+    "name": "AWS Console",
+    "aliases": ["aws"],
+    "loginUrl": "https://signin.aws.amazon.com",
+    "successUrl": "https://console.aws.amazon.com",
+    "captchaSelectors": ["iframe[src*=\"captcha\"]"],
+    "captchaTextPatterns": ["security check"],
+    "twoFactorHint": "AWS may prompt for an MFA code from your authenticator or hardware token."
+  },
+  {
+    "slug": "notion",
+    "name": "Notion",
+    "loginUrl": "https://www.notion.so/login",
+    "successCookie": { "domain": ".notion.so", "name": "token_v2" },
+    "captchaSelectors": [],
+    "captchaTextPatterns": [],
+    "twoFactorHint": "Notion may prompt for a verification code sent to your email."
+  }
+]

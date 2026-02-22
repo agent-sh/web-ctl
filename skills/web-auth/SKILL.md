@@ -2,7 +2,7 @@
 name: web-auth
 description: "Authenticate to websites with human-in-the-loop browser handoff. Use when user needs to log into a website, complete 2FA, or solve CAPTCHAs for agent access."
 version: 1.0.0
-argument-hint: "[session-name] --url [login-url] [--success-url [url]] [--timeout [seconds]] [--vnc]"
+argument-hint: "[session-name] --provider [provider] | --url [login-url] [--success-url [url]] [--timeout [seconds]] [--vnc]"
 ---
 
 # Web Auth Skill
@@ -31,9 +31,27 @@ If the session already exists, skip this step.
 
 ### 2. Start Auth Flow
 
+For known providers, use `--provider` to auto-configure login URL and success detection:
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <session-name> --provider <provider>
+```
+
+Available providers: github, google, microsoft, x (alias: twitter), reddit, discord, slack, linkedin, gitlab, atlassian, aws-console (alias: aws), notion.
+
+For custom or self-hosted providers, create a JSON file following the same schema as the built-in providers and pass it via `--providers-file`:
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <session-name> --provider my-corp --providers-file ./custom-providers.json
+```
+
+For one-off custom sites, specify the URL and success conditions manually:
+
 ```bash
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <session-name> --url <login-url> [--success-url <url>] [--success-selector <selector>] [--timeout <seconds>]
 ```
+
+You can combine `--provider` with explicit flags to override specific settings (CLI flags win).
 
 **Display auto-detection**: If a local display is available, this opens a headed browser window. On remote servers (no display), it automatically falls back to VNC mode - launching Chrome in a virtual framebuffer with a noVNC web viewer.
 
@@ -77,18 +95,32 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session-name> goto <protected-page-u
 
 Check the snapshot to confirm the user is logged in.
 
-## Example: X/Twitter Login
+## Example: X/Twitter Login (with provider)
 
 ```bash
 # Start session
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session start twitter
 
-# Auth - user logs in manually
-node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth twitter --url https://x.com/i/flow/login --success-url https://x.com/home --timeout 120
+# Auth using pre-built provider
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth twitter --provider twitter
 
 # Verify - check if we see the home timeline
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run twitter goto https://x.com/home
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run twitter snapshot
+```
+
+## Example: GitHub Login (with provider)
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session start github
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth github --provider github
+```
+
+## Example: Custom Site (manual config)
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session start myapp
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth myapp --url https://myapp.com/login --success-url https://myapp.com/dashboard
 ```
 
 ## Session Lifecycle

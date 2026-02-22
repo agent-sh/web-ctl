@@ -5,6 +5,7 @@ const sessionStore = require('./session-store');
 const { launchBrowser, closeBrowser, randomDelay, waitForStable } = require('./browser-launcher');
 const { runAuthFlow } = require('./auth-flow');
 const { sanitizeWebContent, wrapOutput } = require('./redact');
+const { listProviders, resolveAuthOptions, loadCustomProviders } = require('./auth-providers');
 
 const path = require('path');
 
@@ -101,12 +102,21 @@ async function sessionStart(name) {
 }
 
 async function sessionAuth(name, opts) {
-  if (!opts.url) {
-    output({ ok: false, command: 'session auth', session: name, error: 'missing_url', message: '--url is required' });
+  if (opts.providersFile) loadCustomProviders(opts.providersFile);
+  let resolved;
+  try {
+    resolved = resolveAuthOptions(opts.provider, opts);
+  } catch (err) {
+    output({ ok: false, command: 'session auth', session: name, error: 'unknown_provider', message: err.message });
     return;
   }
 
-  try { validateUrl(opts.url); } catch (err) {
+  if (!resolved.url) {
+    output({ ok: false, command: 'session auth', session: name, error: 'missing_url', message: '--url is required (or use --provider to set it automatically)' });
+    return;
+  }
+
+  try { validateUrl(resolved.url); } catch (err) {
     output({ ok: false, command: 'session auth', session: name, error: 'invalid_url', message: err.message });
     return;
   }
@@ -117,12 +127,16 @@ async function sessionAuth(name, opts) {
     return;
   }
 
-  const result = await runAuthFlow(name, opts.url, {
-    successUrl: opts.successUrl,
-    successSelector: opts.successSelector,
-    timeout: opts.timeout ? parseInt(opts.timeout, 10) : undefined,
-    vnc: !!opts.vnc,
-    port: opts.port ? parseInt(opts.port, 10) : undefined
+  const result = await runAuthFlow(name, resolved.url, {
+    successUrl: resolved.successUrl,
+    successSelector: resolved.successSelector,
+    successCookie: resolved.successCookie,
+    captchaSelectors: resolved.captchaSelectors,
+    captchaTextPatterns: resolved.captchaTextPatterns,
+    twoFactorHint: resolved.twoFactorHint,
+    timeout: resolved.timeout ? parseInt(resolved.timeout, 10) : undefined,
+    vnc: !!resolved.vnc,
+    port: resolved.port ? parseInt(resolved.port, 10) : undefined
   });
 
   output({ command: 'session auth', ...result });
@@ -468,9 +482,13 @@ Usage:
 Session commands:
   start <name>                  Create a new session
   auth <name> --url <url>       Open headed browser for auth
+    [--provider <name>]         Use pre-built provider (sets url, success checks)
     [--success-url <url>]       URL to detect auth completion
     [--success-selector <sel>]  DOM selector to detect auth completion
+    [--success-cookie <json>]   Cookie presence to detect auth completion
+    [--providers-file <path>]   Load custom providers from JSON file
     [--timeout <seconds>]       Timeout in seconds (default: 300)
+  providers                     List available auth providers
   save <name>                   Save session state
   list                          List all sessions
   status <name>                 Show session status
@@ -503,7 +521,9 @@ Selector syntax:
 
 Examples:
   web-ctl session start github
+  web-ctl session auth github --provider github
   web-ctl session auth github --url https://github.com/login
+  web-ctl session providers
   web-ctl run github goto https://github.com
   web-ctl run github snapshot
   web-ctl run github click "role=link[name='Settings']"
@@ -540,6 +560,10 @@ async function main() {
         if (!name) { output({ ok: false, error: 'missing_name', message: 'Session name required' }); return; }
         await sessionSave(name);
         break;
+      case 'providers':
+        if (opts && opts.providersFile) loadCustomProviders(opts.providersFile);
+        output({ ok: true, command: 'session providers', providers: listProviders() });
+        break;
       case 'list':
         await sessionList();
         break;
@@ -556,7 +580,7 @@ async function main() {
         await sessionRevoke(name);
         break;
       default:
-        output({ ok: false, error: 'unknown_command', message: `Unknown session command: ${subcommand}. Use: start, auth, save, list, status, end, revoke` });
+        output({ ok: false, error: 'unknown_command', message: `Unknown session command: ${subcommand}. Use: start, auth, providers, save, list, status, end, revoke` });
     }
   } else if (command === 'run') {
     const sessionName = args[1];
