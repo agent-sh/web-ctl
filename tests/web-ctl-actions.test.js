@@ -220,15 +220,13 @@ describe('snapshot option flag parsing', () => {
     return opts;
   }
 
-  it('--allow-evaluate does not consume next positional arg', () => {
-    const opts = parseOptions(['--allow-evaluate', 'document.title']);
-    assert.equal(opts.allowEvaluate, true);
-    assert.equal(opts['document.title'], undefined);
-  });
-
-  it('--no-snapshot does not consume next positional arg', () => {
-    const opts = parseOptions(['--no-snapshot', 'css=div']);
-    assert.equal(opts.noSnapshot, true);
+  it('no boolean flag consumes next positional arg', () => {
+    assert.ok(BOOLEAN_FLAGS.size > 0, 'BOOLEAN_FLAGS should not be empty');
+    for (const flag of BOOLEAN_FLAGS) {
+      const key = flag.slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+      const opts = parseOptions([flag, 'positional-value']);
+      assert.equal(opts[key], true, `${flag} should be boolean true`);
+    }
   });
 
   it('non-boolean flags still consume next arg', () => {
@@ -306,6 +304,18 @@ describe('snapshot option flag parsing', () => {
     const args = ['session', 'evaluate', '--allow-evaluate', '--no-snapshot', 'document.body.innerText'];
     const cleanArgs = extractCleanArgs(args, 2);
     assert.deepEqual(cleanArgs, ['document.body.innerText']);
+  });
+
+  it('cleanArgs handles boolean flag at end of args', () => {
+    const args = ['session', 'evaluate', 'code', '--allow-evaluate'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['code']);
+  });
+
+  it('cleanArgs handles multiple value-bearing flags', () => {
+    const args = ['session', 'click', '--timeout', '5000', '--path', '/tmp/file', 'css=button'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['css=button']);
   });
 });
 
