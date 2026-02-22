@@ -83,8 +83,9 @@ function resolveSelector(page, selector) {
  */
 async function getSnapshot(page) {
   try {
-    return await page.locator(':root').ariaSnapshot();
-  } catch {
+    return await page.locator('body').ariaSnapshot();
+  } catch (e) {
+    console.error('[WARN] ariaSnapshot failed:', e.message);
     return '(accessibility tree unavailable)';
   }
 }
