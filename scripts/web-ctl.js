@@ -190,6 +190,95 @@ async function sessionRevoke(name) {
   }
 }
 
+async function sessionVerify(name, opts) {
+  const { checkAuthSuccess } = require('./auth-check');
+  const { resolveAuthOptions: resolve, loadCustomProviders: loadCustom } = require('./auth-providers');
+
+  if (opts.providersFile) loadCustom(opts.providersFile);
+
+  let authOpts = {};
+  if (opts.provider) {
+    try {
+      authOpts = resolve(opts.provider, opts);
+    } catch (err) {
+      output({ ok: false, command: 'session verify', session: name, error: 'unknown_provider', message: err.message });
+      return;
+    }
+  }
+
+  const url = opts.url || authOpts.successUrl;
+  if (!url) {
+    output({ ok: false, command: 'session verify', session: name, error: 'missing_url', message: '--url is required (or use --provider with a successUrl)' });
+    return;
+  }
+
+  try { validateUrl(url); } catch (err) {
+    output({ ok: false, command: 'session verify', session: name, error: 'invalid_url', message: err.message });
+    return;
+  }
+
+  const session = sessionStore.getSession(name);
+  if (!session) {
+    output({ ok: false, command: 'session verify', session: name, error: 'session_not_found', message: `Session "${name}" not found. Run: session start ${name}` });
+    return;
+  }
+
+  if (session.status === 'expired') {
+    output({ ok: false, command: 'session verify', session: name, error: 'session_expired', message: 'Session has expired. Start a new one.' });
+    return;
+  }
+
+  let context;
+  let page;
+  try {
+    sessionStore.lockSession(name);
+    const browser = await launchBrowser(name, { headless: true });
+    context = browser.context;
+    page = browser.page;
+
+    const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    const status = response ? response.status() : null;
+
+    if (opts.expectStatus) {
+      const expected = parseInt(opts.expectStatus, 10);
+      if (status !== expected) {
+        await closeBrowser(name, context);
+        sessionStore.unlockSession(name);
+        output({ ok: false, command: 'session verify', session: name, authenticated: false, reason: `Expected status ${expected}, got ${status}`, url, status });
+        return;
+      }
+    }
+
+    const authResult = await checkAuthSuccess(page, context, url, {
+      successUrl: authOpts.successUrl,
+      successSelector: opts.expectSelector || authOpts.successSelector,
+      successCookie: authOpts.successCookie,
+      successLocalStorage: authOpts.successLocalStorage
+    });
+
+    if (opts.expectSelector && !authOpts.successSelector) {
+      // expectSelector was handled via successSelector above
+    }
+
+    await closeBrowser(name, context);
+    sessionStore.unlockSession(name);
+
+    output({
+      ok: authResult.success,
+      command: 'session verify',
+      session: name,
+      authenticated: authResult.success,
+      reason: authResult.success ? 'Auth check passed' : 'Auth check failed',
+      url,
+      status
+    });
+  } catch (err) {
+    if (context) try { await closeBrowser(name, context); } catch { /* ignore */ }
+    try { sessionStore.unlockSession(name); } catch { /* ignore */ }
+    output({ ok: false, command: 'session verify', session: name, error: 'verify_error', message: err.message });
+  }
+}
+
 // ============ Error Classification ============
 
 /**
@@ -494,6 +583,10 @@ Session commands:
   status <name>                 Show session status
   end <name>                    End and delete session
   revoke <name>                 Delete all session data
+  verify <name> --url <url>     Verify session is still authenticated
+    [--provider <name>]         Use provider defaults for success checks
+    [--expect-status <code>]    Assert HTTP status code
+    [--expect-selector <sel>]   Assert DOM element presence
 
 Run actions:
   goto <url>                    Navigate to URL
@@ -579,8 +672,12 @@ async function main() {
         if (!name) { output({ ok: false, error: 'missing_name', message: 'Session name required' }); return; }
         await sessionRevoke(name);
         break;
+      case 'verify':
+        if (!name) { output({ ok: false, error: 'missing_name', message: 'Session name required' }); return; }
+        await sessionVerify(name, opts);
+        break;
       default:
-        output({ ok: false, error: 'unknown_command', message: `Unknown session command: ${subcommand}. Use: start, auth, providers, save, list, status, end, revoke` });
+        output({ ok: false, error: 'unknown_command', message: `Unknown session command: ${subcommand}. Use: start, auth, providers, save, list, status, end, revoke, verify` });
     }
   } else if (command === 'run') {
     const sessionName = args[1];
