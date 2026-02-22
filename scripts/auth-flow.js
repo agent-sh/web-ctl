@@ -4,6 +4,7 @@ const { launchBrowser, closeBrowser, canLaunchHeaded } = require('./browser-laun
 const sessionStore = require('./session-store');
 const { runVncAuth, isVncAvailable } = require('./vnc-auth');
 const { checkAuthSuccess } = require('./auth-check');
+const { verifyHeadless } = require('./verify-headless');
 
 const CAPTCHA_SELECTORS = [
   'iframe[src*="arkose"]',
@@ -52,7 +53,7 @@ async function detectCaptcha(page, extraSelectors, extraTextPatterns) {
  *
  * @param {string} sessionName
  * @param {string} url - Auth/login URL
- * @param {object} options - { successUrl, successSelector, successCookie, timeout, captchaSelectors, captchaTextPatterns, twoFactorHint }
+ * @param {object} options - { successUrl, successSelector, successCookie, timeout, captchaSelectors, captchaTextPatterns, twoFactorHint, verifyUrl, verifySelector }
  * @returns {{ ok, session, error, captchaDetected, twoFactorHint }}
  */
 async function runAuthFlow(sessionName, url, options = {}) {
@@ -102,8 +103,14 @@ async function runAuthFlow(sessionName, url, options = {}) {
       if (result.success) {
         await closeBrowser(sessionName, context);
         sessionStore.updateSession(sessionName, { status: 'authenticated' });
+        const headlessVerification = await verifyHeadless(sessionName, {
+          verifyUrl: options.verifyUrl,
+          verifySelector: options.verifySelector
+        });
         sessionStore.unlockSession(sessionName);
-        return { ok: true, session: sessionName, url: result.currentUrl };
+        const authResult = { ok: true, session: sessionName, url: result.currentUrl };
+        if (headlessVerification) authResult.headlessVerification = headlessVerification;
+        return authResult;
       }
 
       await new Promise(resolve => setTimeout(resolve, pollInterval));

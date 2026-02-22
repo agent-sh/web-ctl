@@ -44,6 +44,14 @@ describe('providers.json schema', () => {
     const slugs = providers.map(p => p.slug);
     assert.equal(new Set(slugs).size, slugs.length);
   });
+
+  it('providers with verifyUrl have valid https URLs', () => {
+    for (const p of providers) {
+      if (p.verifyUrl) {
+        assert.ok(p.verifyUrl.startsWith('https://'), `verifyUrl must be https for ${p.slug}: ${p.verifyUrl}`);
+      }
+    }
+  });
 });
 
 // ============ getProvider ============
@@ -205,6 +213,23 @@ describe('resolveAuthOptions', () => {
     const opts = resolveAuthOptions('github', {});
     assert.ok(opts.notes);
     assert.ok(opts.notes.includes('Arkose'));
+  });
+
+  it('includes verifyUrl from provider', () => {
+    const opts = resolveAuthOptions('github', {});
+    assert.equal(opts.verifyUrl, 'https://github.com');
+    assert.equal(opts.verifySelector, 'meta[name="user-login"][content]');
+  });
+
+  it('CLI verifyUrl overrides provider', () => {
+    const opts = resolveAuthOptions('github', { verifyUrl: 'https://github.com/settings' });
+    assert.equal(opts.verifyUrl, 'https://github.com/settings');
+  });
+
+  it('omits verifyUrl when not set', () => {
+    const opts = resolveAuthOptions('google', {});
+    assert.equal(opts.verifyUrl, undefined);
+    assert.ok(!('verifyUrl' in opts));
   });
 });
 

@@ -193,7 +193,9 @@ async function sessionAuth(name, opts) {
     twoFactorHint: resolved.twoFactorHint,
     timeout: resolved.timeout ? parseInt(resolved.timeout, 10) : undefined,
     vnc: !!resolved.vnc,
-    port: resolved.port ? parseInt(resolved.port, 10) : undefined
+    port: resolved.port ? parseInt(resolved.port, 10) : undefined,
+    verifyUrl: resolved.verifyUrl,
+    verifySelector: resolved.verifySelector
   });
 
   output({ command: 'session auth', ...result });
