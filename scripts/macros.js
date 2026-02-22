@@ -41,27 +41,14 @@ async function tabSwitch(page, actionArgs, opts, helpers) {
 async function modalDismiss(page, actionArgs, opts, helpers) {
   const { resolveSelector, waitForStable, getSnapshot } = helpers;
 
-  // Auto-detect modal
-  const modalSelectors = [
-    'role=dialog',
-    '[class*="modal"]',
-    '[class*="overlay"]',
-    '[class*="cookie"]'
-  ];
-
-  let customSelector = opts.selector;
   let modal = null;
 
-  if (customSelector) {
-    modal = resolveSelector(page, customSelector);
+  if (opts.selector) {
+    modal = resolveSelector(page, opts.selector);
   } else {
-    for (const sel of modalSelectors) {
-      const loc = sel.startsWith('role=') ? resolveSelector(page, sel) : page.locator(sel);
-      const count = await loc.count();
-      if (count > 0 && await loc.first().isVisible()) {
-        modal = loc.first();
-        break;
-      }
+    const combined = page.locator(':is([role="dialog"], [class*="modal"], [class*="overlay"], [class*="cookie"])').first();
+    if (await combined.count() > 0 && await combined.isVisible()) {
+      modal = combined;
     }
   }
 
@@ -122,8 +109,9 @@ async function formFill(page, actionArgs, opts, helpers) {
 
   for (const [label, value] of Object.entries(fields)) {
     const input = page.getByLabel(label);
-    const tagName = await input.evaluate(el => el.tagName.toLowerCase()).catch(() => 'input');
-    const inputType = await input.evaluate(el => el.type || '').catch(() => '');
+    const { tagName, inputType } = await input.evaluate(el => ({
+      tagName: el.tagName.toLowerCase(), inputType: el.type || ''
+    })).catch(() => ({ tagName: 'input', inputType: '' }));
 
     if (tagName === 'select') {
       await input.selectOption(value);
@@ -164,7 +152,7 @@ async function searchSelect(page, actionArgs, opts, helpers) {
   const { resolveSelector, waitForStable, getSnapshot } = helpers;
   const input = resolveSelector(page, inputSel);
   await input.click({ timeout: 10000 });
-  await input.type(query, { delay: 80 });
+  await input.pressSequentially(query, { delay: 80 });
   await waitForStable(page, { timeout: 5000 });
   await page.getByText(opts.pick).click({ timeout: 10000 });
   await waitForStable(page, { timeout: 5000 });
@@ -180,6 +168,9 @@ async function datePick(page, actionArgs, opts, helpers) {
   if (!opts.date) {
     throw new Error('--date <YYYY-MM-DD> is required for date-pick');
   }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(opts.date)) {
+    throw new Error('Invalid date format. Use YYYY-MM-DD (e.g., 2026-03-15)');
+  }
 
   const { resolveSelector, waitForStable, getSnapshot } = helpers;
   const [targetYear, targetMonth, targetDay] = opts.date.split('-').map(Number);
@@ -188,13 +179,14 @@ async function datePick(page, actionArgs, opts, helpers) {
   await input.click({ timeout: 10000 });
   await waitForStable(page, { timeout: 3000 });
 
+  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'];
+  const targetMonthName = monthNames[targetMonth - 1];
+
   // Navigate to target month/year - try up to 24 months
   for (let i = 0; i < 24; i++) {
     const headerText = await page.locator('[class*="calendar"], [role="grid"], [class*="datepicker"]')
       .first().textContent().catch(() => '');
-    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'];
-    const targetMonthName = monthNames[targetMonth - 1];
 
     if (headerText.includes(targetMonthName) && headerText.includes(String(targetYear))) {
       break;
@@ -218,6 +210,20 @@ async function fileUpload(page, actionArgs, opts, helpers) {
   const filePath = actionArgs[1];
   if (!selector || !filePath) {
     throw new Error('Usage: file-upload <selector> <file-path> [--wait-for <selector>]');
+  }
+
+  // Reject paths to sensitive system locations
+  const path = require('path');
+  const resolved = path.resolve(filePath);
+  const blocked = ['/etc', '/var', '/root', '/proc', '/sys'];
+  for (const dir of blocked) {
+    if (resolved.startsWith(dir + '/') || resolved === dir) {
+      throw new Error(`File path "${filePath}" points to a restricted system directory.`);
+    }
+  }
+  // Reject common sensitive files
+  if (resolved.includes('.ssh') || resolved.includes('.gnupg') || resolved.includes('.env')) {
+    throw new Error(`File path "${filePath}" may contain sensitive data. Use a safe upload directory.`);
   }
 
   const { resolveSelector, waitForStable, getSnapshot } = helpers;
@@ -292,38 +298,21 @@ async function scrollTo(page, actionArgs, opts, helpers) {
 async function waitToast(page, actionArgs, opts, helpers) {
   const { getSnapshot } = helpers;
   const timeout = opts.timeout ? parseInt(opts.timeout, 10) : 10000;
-  const toastSelectors = [
-    '[role="alert"]',
-    '[role="status"]',
-    '[class*="toast"]',
-    '[class*="snackbar"]'
-  ];
+  const combinedSelector = ':is([role="alert"], [role="status"], [class*="toast"], [class*="snackbar"])';
 
-  let toastText = null;
-  const deadline = Date.now() + timeout;
+  const toast = page.locator(combinedSelector).first();
+  await toast.waitFor({ state: 'visible', timeout });
+  const toastText = await toast.textContent();
 
-  while (Date.now() < deadline) {
-    for (const sel of toastSelectors) {
-      const loc = page.locator(sel);
-      const count = await loc.count();
-      if (count > 0 && await loc.first().isVisible()) {
-        toastText = await loc.first().textContent();
-        if (toastText && toastText.trim()) {
-          if (opts.dismiss) {
-            const dismissBtn = loc.first().locator('button').first();
-            if (await dismissBtn.count() > 0) {
-              await dismissBtn.click({ timeout: 3000 }).catch(() => {});
-            }
-          }
-          const snapshot = await getSnapshot(page);
-          return { url: page.url(), toast: toastText.trim(), snapshot };
-        }
-      }
+  if (opts.dismiss) {
+    const dismissBtn = toast.locator('button').first();
+    if (await dismissBtn.count() > 0) {
+      await dismissBtn.click({ timeout: 3000 }).catch(() => {});
     }
-    await new Promise(resolve => setTimeout(resolve, 500));
   }
 
-  throw new Error(`No toast/notification appeared within ${timeout}ms`);
+  const snapshot = await getSnapshot(page);
+  return { url: page.url(), toast: (toastText || '').trim(), snapshot };
 }
 
 async function iframeAction(page, actionArgs, opts, helpers) {
@@ -334,7 +323,7 @@ async function iframeAction(page, actionArgs, opts, helpers) {
     throw new Error('Usage: iframe-action <iframe-selector> <action> [args]');
   }
 
-  const { resolveSelector, waitForStable, getSnapshot } = helpers;
+  const { waitForStable, getSnapshot } = helpers;
   const frame = page.frameLocator(iframeSel);
 
   let actionResult;
@@ -383,27 +372,13 @@ async function login(page, actionArgs, opts, helpers) {
   const { resolveSelector, waitForStable, getSnapshot } = helpers;
 
   // Auto-detect username field
-  const usernameSelectors = [
-    'input[type="email"]',
-    'input[autocomplete*="user"]',
-    'input[autocomplete="email"]',
-    'input[name*="user" i]',
-    'input[name*="email" i]',
-    'input[name*="login" i]',
-    'input[id*="user" i]',
-    'input[id*="email" i]'
-  ];
+  const usernameField = page.locator(
+    'input[type="email"], input[autocomplete*="user"], input[autocomplete="email"], ' +
+    'input[name*="user" i], input[name*="email" i], input[name*="login" i], ' +
+    'input[id*="user" i], input[id*="email" i]'
+  ).first();
 
-  let usernameField = null;
-  for (const sel of usernameSelectors) {
-    const loc = page.locator(sel);
-    if (await loc.count() > 0 && await loc.first().isVisible()) {
-      usernameField = loc.first();
-      break;
-    }
-  }
-
-  if (!usernameField) {
+  if (await usernameField.count() === 0 || !await usernameField.isVisible()) {
     throw new Error('Could not auto-detect username/email field. Use fill action directly.');
   }
 
@@ -417,33 +392,13 @@ async function login(page, actionArgs, opts, helpers) {
   await passwordField.fill(opts.pass);
 
   // Find and click submit
-  const submitSelectors = [
-    'button[type="submit"]',
-    'input[type="submit"]'
-  ];
-
-  let submitBtn = null;
-  for (const sel of submitSelectors) {
-    const loc = page.locator(sel);
-    if (await loc.count() > 0 && await loc.first().isVisible()) {
-      submitBtn = loc.first();
-      break;
-    }
-  }
-
-  if (!submitBtn) {
+  let submitBtn = page.locator('button[type="submit"], input[type="submit"]').first();
+  if (await submitBtn.count() === 0 || !await submitBtn.isVisible()) {
     // Try common button text patterns
-    const btnPatterns = ['Log in', 'Login', 'Sign in', 'Submit'];
-    for (const pattern of btnPatterns) {
-      const btn = page.getByRole('button', { name: pattern });
-      if (await btn.count() > 0) {
-        submitBtn = btn.first();
-        break;
-      }
-    }
+    submitBtn = page.locator('button:is(:text("Log in"), :text("Login"), :text("Sign in"), :text("Submit"))').first();
   }
 
-  if (!submitBtn) {
+  if (await submitBtn.count() === 0) {
     throw new Error('Could not find submit button. Use click action directly.');
   }
 

@@ -1,6 +1,6 @@
 ---
 name: web-ctl
-description: "Browser automation for AI agents — navigate, authenticate, and interact with web pages."
+description: "Browser automation for AI agents - navigate, authenticate, and interact with web pages."
 codex-description: 'Use when user asks to "open a webpage", "browse website", "log into site", "scrape page", "interact with web", "web automation", "browser control".'
 argument-hint: "[session] [action] [--url [url]] [--headed]"
 allowed-tools: Skill, Task, Bash(node:*), Read, AskUserQuestion

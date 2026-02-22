@@ -134,4 +134,102 @@ describe('macro argument validation', () => {
       /Usage: login/
     );
   });
+
+  it('date-pick rejects invalid date format', async () => {
+    await assert.rejects(
+      () => macros['date-pick'](stubPage, ['#input'], { date: '2024/01/15' }, stubHelpers),
+      /Invalid date format/
+    );
+  });
+
+  it('date-pick rejects non-date strings', async () => {
+    await assert.rejects(
+      () => macros['date-pick'](stubPage, ['#input'], { date: 'not-a-date' }, stubHelpers),
+      /Invalid date format/
+    );
+  });
+
+  it('file-upload rejects paths to /etc', async () => {
+    await assert.rejects(
+      () => macros['file-upload'](stubPage, ['input', '/etc/passwd'], {}, stubHelpers),
+      /restricted system directory/
+    );
+  });
+
+  it('file-upload rejects paths containing .ssh', async () => {
+    await assert.rejects(
+      () => macros['file-upload'](stubPage, ['input', '/home/user/.ssh/id_rsa'], {}, stubHelpers),
+      /sensitive data/
+    );
+  });
+
+  it('file-upload rejects paths containing .env', async () => {
+    await assert.rejects(
+      () => macros['file-upload'](stubPage, ['input', '/app/.env'], {}, stubHelpers),
+      /sensitive data/
+    );
+  });
+
+  it('iframe-action click requires selector', async () => {
+    const pageWithFrame = { frameLocator: () => ({}) };
+    await assert.rejects(
+      () => macros['iframe-action'](pageWithFrame, ['#frame', 'click'], {}, stubHelpers),
+      /Selector required/
+    );
+  });
+
+  it('iframe-action fill requires selector and value', async () => {
+    const pageWithFrame = { frameLocator: () => ({}) };
+    await assert.rejects(
+      () => macros['iframe-action'](pageWithFrame, ['#frame', 'fill'], {}, stubHelpers),
+      /Selector and value required/
+    );
+  });
+
+  it('iframe-action read requires selector', async () => {
+    const pageWithFrame = { frameLocator: () => ({}) };
+    await assert.rejects(
+      () => macros['iframe-action'](pageWithFrame, ['#frame', 'read'], {}, stubHelpers),
+      /Selector required/
+    );
+  });
+});
+
+describe('modal-dismiss detection', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    getSnapshot: async () => '(stub)'
+  };
+
+  it('throws when no modal is detected', async () => {
+    const page = {
+      locator: () => ({
+        first: () => ({ count: async () => 0, isVisible: async () => false }),
+        count: async () => 0
+      })
+    };
+    await assert.rejects(
+      () => macros['modal-dismiss'](page, [], {}, stubHelpers),
+      /No visible modal detected/
+    );
+  });
+});
+
+describe('wait-toast detection', () => {
+  const stubHelpers = {
+    getSnapshot: async () => '(stub)'
+  };
+
+  it('throws when no toast appears within timeout', async () => {
+    const page = {
+      locator: () => ({
+        first: () => ({ waitFor: async () => { throw new Error('Timeout'); } })
+      })
+    };
+    await assert.rejects(
+      () => macros['wait-toast'](page, [], { timeout: '100' }, stubHelpers),
+      /Timeout/
+    );
+  });
 });
