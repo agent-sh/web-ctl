@@ -388,6 +388,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
 
     if (action !== 'goto' && session.lastUrl && session.lastUrl !== 'about:blank') {
       try {
+        validateUrl(session.lastUrl);
         await page.goto(session.lastUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
       } catch { /* ignore - best effort restoration */ }
     }
@@ -558,7 +559,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
       if (currentUrl && currentUrl !== 'about:blank') {
         sessionStore.updateSession(sessionName, { lastUrl: currentUrl });
       }
-    } catch {}
+    } catch { /* ignore - page may have closed before URL read */ }
 
     await closeBrowser(sessionName, context);
     sessionStore.unlockSession(sessionName);
