@@ -72,7 +72,11 @@ function resolveAuthOptions(providerName, cliOpts = {}) {
     successUrl: cliOpts.successUrl || provider.successUrl || undefined,
     successSelector: cliOpts.successSelector || provider.successSelector || undefined,
     successCookie: cliOpts.successCookie || provider.successCookie || undefined,
-    twoFactorHint: cliOpts.twoFactorHint || provider.twoFactorHint || undefined
+    successLocalStorage: cliOpts.successLocalStorage || provider.successLocalStorage || undefined,
+    twoFactorHint: cliOpts.twoFactorHint || provider.twoFactorHint || undefined,
+    twoFactorSelectors: provider.twoFactorSelectors || undefined,
+    flowType: provider.flowType || undefined,
+    notes: provider.notes || undefined
   };
 
   if (provider.captchaSelectors && provider.captchaSelectors.length > 0) {
