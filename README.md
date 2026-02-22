@@ -94,6 +94,20 @@ node scripts/web-ctl.js run <session> checkpoint [--timeout <seconds>]
 - `text=Click here` - Text content selector
 - `#my-id` - ID shorthand (becomes `css=#my-id`)
 
+## Error Handling
+
+All error responses include `error` (code), `message` (human-readable), `suggestion` (recovery action), and `snapshot` (current page state).
+
+| Error Code | Meaning | Suggested Recovery |
+|------------|---------|-------------------|
+| `element_not_found` | Selector didn't match | Use snapshot to find correct selector |
+| `timeout` | Action exceeded time limit | Increase `--timeout` |
+| `browser_closed` | Session crashed or timed out | `session start <name>` |
+| `network_error` | URL unreachable / DNS failure | Check URL and session cookies |
+| `no_display` | Headed mode needs a display | Use `--vnc` flag |
+| `session_expired` | Session TTL exceeded | Create new session, re-authenticate |
+| `action_error` | Other error | Check message and suggestion fields |
+
 ## Security Model
 
 - All web content is wrapped in `[PAGE_CONTENT: ...]` delimiters to prevent prompt injection
