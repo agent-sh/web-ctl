@@ -67,7 +67,25 @@ describe('getSnapshot', () => {
       };
       const result = await getSnapshot(mockPage);
       assert.equal(result, '(accessibility tree unavailable - string error)');
+      assert.equal(warnings.length, 1);
+      assert.equal(warnings[0][0], '[WARN] ariaSnapshot failed:');
       assert.equal(warnings[0][1], 'string error');
+    } finally {
+      console.warn = origWarn;
+    }
+  });
+
+  it('handles page.locator throwing', async () => {
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => warnings.push(args);
+    try {
+      const mockPage = {
+        locator() { throw new TypeError('Cannot read properties of null'); }
+      };
+      const result = await getSnapshot(mockPage);
+      assert.equal(result, '(accessibility tree unavailable - Cannot read properties of null)');
+      assert.equal(warnings.length, 1);
     } finally {
       console.warn = origWarn;
     }

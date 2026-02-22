@@ -569,7 +569,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
   } catch (err) {
     let snapshot = null;
     if (page) {
-      snapshot = await getSnapshot(page);
+      try { snapshot = await getSnapshot(page); } catch { /* getSnapshot handles internally; guard against unexpected state */ }
       try {
         const currentUrl = page.url();
         if (currentUrl && currentUrl !== 'about:blank') {
