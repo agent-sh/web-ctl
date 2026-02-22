@@ -65,7 +65,7 @@ async function checkAuthSuccess(page, context, originalUrl, options = {}) {
 
   // 3.5. Check success by localStorage key
   if (options.successLocalStorage) {
-    const { origin, key } = options.successLocalStorage;
+    const { key } = options.successLocalStorage;
     try {
       const value = await page.evaluate(({ storageKey }) => {
         try { return localStorage.getItem(storageKey); } catch { return null; }
