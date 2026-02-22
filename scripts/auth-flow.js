@@ -106,9 +106,6 @@ async function runAuthFlow(sessionName, url, options = {}) {
         return { ok: true, session: sessionName, url: result.currentUrl };
       }
 
-      // Check for CAPTCHA (don't fail - user might solve it)
-      await detectCaptcha(page, options.captchaSelectors, options.captchaTextPatterns);
-
       await new Promise(resolve => setTimeout(resolve, pollInterval));
     }
 
