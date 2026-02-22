@@ -11,8 +11,9 @@ async function getSnapshot(page) {
   try {
     return await page.locator('body').ariaSnapshot();
   } catch (e) {
-    console.warn('[WARN] ariaSnapshot failed:', e?.message ?? String(e));
-    return '(accessibility tree unavailable)';
+    const msg = e?.message ?? String(e);
+    console.warn('[WARN] ariaSnapshot failed:', msg);
+    return `(accessibility tree unavailable - ${msg})`;
   }
 }
 
@@ -43,7 +44,7 @@ describe('getSnapshot', () => {
         }
       };
       const result = await getSnapshot(mockPage);
-      assert.equal(result, '(accessibility tree unavailable)');
+      assert.equal(result, '(accessibility tree unavailable - page crashed)');
       assert.equal(warnings.length, 1);
       assert.equal(warnings[0][0], '[WARN] ariaSnapshot failed:');
       assert.equal(warnings[0][1], 'page crashed');
@@ -65,8 +66,26 @@ describe('getSnapshot', () => {
         }
       };
       const result = await getSnapshot(mockPage);
-      assert.equal(result, '(accessibility tree unavailable)');
+      assert.equal(result, '(accessibility tree unavailable - string error)');
+      assert.equal(warnings.length, 1);
+      assert.equal(warnings[0][0], '[WARN] ariaSnapshot failed:');
       assert.equal(warnings[0][1], 'string error');
+    } finally {
+      console.warn = origWarn;
+    }
+  });
+
+  it('handles page.locator throwing', async () => {
+    const warnings = [];
+    const origWarn = console.warn;
+    console.warn = (...args) => warnings.push(args);
+    try {
+      const mockPage = {
+        locator() { throw new TypeError('Cannot read properties of null'); }
+      };
+      const result = await getSnapshot(mockPage);
+      assert.equal(result, '(accessibility tree unavailable - Cannot read properties of null)');
+      assert.equal(warnings.length, 1);
     } finally {
       console.warn = origWarn;
     }
