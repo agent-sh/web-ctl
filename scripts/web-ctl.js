@@ -2,7 +2,7 @@
 'use strict';
 
 const sessionStore = require('./session-store');
-const { launchBrowser, closeBrowser, randomDelay } = require('./browser-launcher');
+const { launchBrowser, closeBrowser, randomDelay, waitForStable } = require('./browser-launcher');
 const { runAuthFlow } = require('./auth-flow');
 const { sanitizeWebContent, wrapOutput } = require('./redact');
 
@@ -176,6 +176,84 @@ async function sessionRevoke(name) {
   }
 }
 
+// ============ Error Classification ============
+
+/**
+ * Classify a Playwright/action error into an actionable error response.
+ * Returns { error, message, suggestion } with context-aware recovery hints.
+ */
+function classifyError(err, { action, selector, snapshot } = {}) {
+  const msg = err.message || '';
+
+  // Browser/context closed
+  if (msg.includes('browser has been closed') || msg.includes('Target closed') ||
+      msg.includes('Target page, context or browser has been closed')) {
+    return {
+      error: 'browser_closed',
+      message: 'Browser closed unexpectedly. The session may have timed out or crashed.',
+      suggestion: 'Run: session start <name> to create a fresh session'
+    };
+  }
+
+  // No display for headed mode
+  if (msg.includes('no usable sandbox') || msg.includes('Cannot open display') ||
+      msg.includes('Missing X server')) {
+    return {
+      error: 'no_display',
+      message: 'No display available for headed browser.',
+      suggestion: 'Use --vnc flag or install: sudo apt-get install xvfb x11vnc'
+    };
+  }
+
+  // Element not found / strict mode violation
+  if (msg.includes('not found') || msg.includes('waiting for locator') ||
+      msg.includes('strict mode violation') || msg.includes('resolved to') ||
+      msg.includes('Timeout') && selector) {
+    const hint = snapshot
+      ? `Current page snapshot available in response for element discovery.`
+      : 'Run: snapshot to see current page elements, then adjust selector.';
+    return {
+      error: 'element_not_found',
+      message: `Selector '${selector || 'unknown'}' not found on current page.`,
+      suggestion: hint
+    };
+  }
+
+  // Timeout (general)
+  if (msg.includes('Timeout') || msg.includes('timeout')) {
+    return {
+      error: 'timeout',
+      message: `Action '${action}' timed out.`,
+      suggestion: 'Increase --timeout value or verify the page is loading correctly'
+    };
+  }
+
+  // Network errors
+  if (msg.includes('net::ERR_') || msg.includes('NS_ERROR_')) {
+    return {
+      error: 'network_error',
+      message: `Network error during '${action}': ${msg.split('\n')[0]}`,
+      suggestion: 'Check URL is accessible. If auth is needed, verify session cookies with: session status <name>'
+    };
+  }
+
+  // Session expired (caught before runAction, but just in case)
+  if (msg.includes('expired')) {
+    return {
+      error: 'session_expired',
+      message: 'Session has expired.',
+      suggestion: 'Run: session start <name> to create a new session, then re-authenticate'
+    };
+  }
+
+  // Default
+  return {
+    error: 'action_error',
+    message: msg.split('\n')[0],
+    suggestion: null
+  };
+}
+
 // ============ Run Commands ============
 
 async function runAction(sessionName, action, actionArgs, opts) {
@@ -227,9 +305,26 @@ async function runAction(sessionName, action, actionArgs, opts) {
         if (!selector) throw new Error('Selector required: run <session> click <selector>');
         const locator = resolveSelector(page, selector);
         await locator.click({ timeout: 10000 });
-        await randomDelay();
+        if (opts.waitStable) {
+          const stableTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 5000;
+          await waitForStable(page, { timeout: stableTimeout });
+        } else {
+          await randomDelay();
+        }
         const snapshot = await getSnapshot(page);
         result = { url: page.url(), clicked: selector, snapshot };
+        break;
+      }
+
+      case 'click-wait': {
+        const selector = actionArgs[0];
+        if (!selector) throw new Error('Selector required: run <session> click-wait <selector>');
+        const locator = resolveSelector(page, selector);
+        await locator.click({ timeout: 10000 });
+        const stableTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 5000;
+        await waitForStable(page, { timeout: stableTimeout });
+        const snapshot = await getSnapshot(page);
+        result = { url: page.url(), clicked: selector, settled: true, snapshot };
         break;
       }
 
@@ -333,7 +428,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
       }
 
       default:
-        throw new Error(`Unknown action: ${action}. Available: goto, snapshot, click, type, read, fill, wait, evaluate, screenshot, network, checkpoint`);
+        throw new Error(`Unknown action: ${action}. Available: goto, snapshot, click, click-wait, type, read, fill, wait, evaluate, screenshot, network, checkpoint`);
     }
 
     await closeBrowser(sessionName, context);
@@ -350,12 +445,12 @@ async function runAction(sessionName, action, actionArgs, opts) {
     }
     try { sessionStore.unlockSession(sessionName); } catch { /* ignore */ }
 
+    const classified = classifyError(err, { action, selector: actionArgs[0], snapshot });
     output({
       ok: false,
       command: `run ${action}`,
       session: sessionName,
-      error: err.message.includes('not found') ? 'element_not_found' : 'action_error',
-      message: err.message,
+      ...classified,
       snapshot
     });
   }
@@ -386,6 +481,10 @@ Run actions:
   goto <url>                    Navigate to URL
   snapshot                      Get accessibility tree
   click <selector>              Click element
+    [--wait-stable]             Wait for DOM + network to settle after click
+    [--timeout <ms>]            Stability wait timeout (default: 5000)
+  click-wait <selector>         Click and wait for page to settle
+    [--timeout <ms>]            Stability wait timeout (default: 5000)
   type <selector> <text>        Type text into element
   read <selector>               Read element text content
   fill <selector> <value>       Fill form field
@@ -408,6 +507,8 @@ Examples:
   web-ctl run github goto https://github.com
   web-ctl run github snapshot
   web-ctl run github click "role=link[name='Settings']"
+  web-ctl run github click-wait "role=button[name='Save']"
+  web-ctl run github click "role=tab[name='Code']" --wait-stable
   web-ctl session end github`);
 }
 

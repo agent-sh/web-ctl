@@ -168,4 +168,31 @@ async function canLaunchHeaded() {
   return _headedResult;
 }
 
-module.exports = { launchBrowser, closeBrowser, randomDelay, isWSL, canLaunchHeaded };
+/**
+ * Wait for page to stabilize after an action (network idle + no DOM mutations).
+ *
+ * @param {import('playwright').Page} page
+ * @param {object} options - { timeout: number (ms, default 5000) }
+ */
+async function waitForStable(page, { timeout = 5000 } = {}) {
+  // Wait for network to settle (best effort, don't fail if it times out)
+  await Promise.race([
+    page.waitForLoadState('networkidle', { timeout }).catch(() => {}),
+    new Promise(resolve => setTimeout(resolve, timeout))
+  ]);
+
+  // Wait for no DOM mutations for 500ms
+  const DOM_QUIET_MS = 500;
+  await page.evaluate((ms) => new Promise(resolve => {
+    let timer = setTimeout(resolve, ms);
+    const observer = new MutationObserver(() => {
+      clearTimeout(timer);
+      timer = setTimeout(resolve, ms);
+    });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+    // Safety: disconnect observer when done
+    setTimeout(() => { observer.disconnect(); resolve(); }, ms * 10);
+  }), DOM_QUIET_MS);
+}
+
+module.exports = { launchBrowser, closeBrowser, randomDelay, isWSL, canLaunchHeaded, waitForStable };

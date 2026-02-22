@@ -57,7 +57,10 @@ node scripts/web-ctl.js run <session> goto <url>
 node scripts/web-ctl.js run <session> snapshot
 
 # Click element
-node scripts/web-ctl.js run <session> click <selector>
+node scripts/web-ctl.js run <session> click <selector> [--wait-stable]
+
+# Click and wait for page to settle (SPA-friendly)
+node scripts/web-ctl.js run <session> click-wait <selector> [--timeout <ms>]
 
 # Type text
 node scripts/web-ctl.js run <session> type <selector> <text>
