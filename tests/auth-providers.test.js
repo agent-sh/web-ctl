@@ -12,8 +12,8 @@ const providers = require('../scripts/providers.json');
 // ============ providers.json schema ============
 
 describe('providers.json schema', () => {
-  it('contains at least 12 providers', () => {
-    assert.ok(providers.length >= 12);
+  it('contains at least 24 providers', () => {
+    assert.ok(providers.length >= 24, `expected >= 24 providers, got ${providers.length}`);
   });
 
   it('every provider has required fields', () => {
@@ -27,8 +27,16 @@ describe('providers.json schema', () => {
 
   it('every provider has at least one success condition', () => {
     for (const p of providers) {
-      const hasCondition = p.successUrl || p.successSelector || p.successCookie;
+      const hasCondition = p.successUrl || p.successSelector || p.successCookie || p.successLocalStorage;
       assert.ok(hasCondition, `${p.slug} has no success condition`);
+    }
+  });
+
+  it('every provider has a flowType', () => {
+    const validFlowTypes = ['single-step', 'multi-step', 'magic-link', 'spa'];
+    for (const p of providers) {
+      assert.ok(p.flowType, `${p.slug} missing flowType`);
+      assert.ok(validFlowTypes.includes(p.flowType), `${p.slug} has invalid flowType: ${p.flowType}`);
     }
   });
 
@@ -61,6 +69,31 @@ describe('getProvider', () => {
   it('resolves aws alias', () => {
     const p = getProvider('aws');
     assert.equal(p.slug, 'aws-console');
+  });
+
+  it('resolves new provider aliases', () => {
+    assert.equal(getProvider('ig').slug, 'instagram');
+    assert.equal(getProvider('fb').slug, 'facebook');
+    assert.equal(getProvider('meta').slug, 'facebook');
+    assert.equal(getProvider('openai').slug, 'chatgpt');
+    assert.equal(getProvider('hn').slug, 'hackernews');
+    assert.equal(getProvider('ycombinator').slug, 'hackernews');
+    assert.equal(getProvider('so').slug, 'stackoverflow');
+    assert.equal(getProvider('stackexchange').slug, 'stackoverflow');
+    assert.equal(getProvider('bb').slug, 'bitbucket');
+    assert.equal(getProvider('npmjs').slug, 'npm');
+    assert.equal(getProvider('docker').slug, 'dockerhub');
+    assert.equal(getProvider('dev').slug, 'devto');
+  });
+
+  it('finds new providers by slug', () => {
+    const newSlugs = ['instagram', 'facebook', 'chatgpt', 'devto', 'hackernews',
+      'stackoverflow', 'vercel', 'netlify', 'jira', 'bitbucket', 'npm', 'dockerhub'];
+    for (const slug of newSlugs) {
+      const p = getProvider(slug);
+      assert.ok(p, `provider ${slug} not found`);
+      assert.equal(p.slug, slug);
+    }
   });
 
   it('returns null for unknown provider', () => {
@@ -131,13 +164,47 @@ describe('resolveAuthOptions', () => {
   it('includes twoFactorHint from provider', () => {
     const opts = resolveAuthOptions('github', {});
     assert.ok(opts.twoFactorHint);
-    assert.ok(opts.twoFactorHint.includes('2FA'));
+    assert.ok(opts.twoFactorHint.includes('TOTP'));
   });
 
   it('includes captchaSelectors from provider', () => {
     const opts = resolveAuthOptions('google', {});
     assert.ok(opts.captchaSelectors);
     assert.ok(opts.captchaSelectors.length > 0);
+  });
+
+  it('includes successLocalStorage for discord', () => {
+    const opts = resolveAuthOptions('discord', {});
+    assert.ok(opts.successLocalStorage);
+    assert.equal(opts.successLocalStorage.origin, 'https://discord.com');
+    assert.equal(opts.successLocalStorage.key, 'token');
+  });
+
+  it('includes twoFactorSelectors from provider', () => {
+    const opts = resolveAuthOptions('github', {});
+    assert.ok(opts.twoFactorSelectors);
+    assert.ok(opts.twoFactorSelectors.length > 0);
+    assert.ok(opts.twoFactorSelectors.includes('input[name="app_otp"]'));
+  });
+
+  it('includes flowType from provider', () => {
+    const opts = resolveAuthOptions('github', {});
+    assert.equal(opts.flowType, 'single-step');
+
+    const opts2 = resolveAuthOptions('google', {});
+    assert.equal(opts2.flowType, 'multi-step');
+
+    const opts3 = resolveAuthOptions('slack', {});
+    assert.equal(opts3.flowType, 'magic-link');
+
+    const opts4 = resolveAuthOptions('discord', {});
+    assert.equal(opts4.flowType, 'spa');
+  });
+
+  it('includes notes from provider', () => {
+    const opts = resolveAuthOptions('github', {});
+    assert.ok(opts.notes);
+    assert.ok(opts.notes.includes('Arkose'));
   });
 });
 
@@ -198,12 +265,13 @@ describe('loadCustomProviders', () => {
 
 describe('checkAuthSuccess', () => {
   // Mock page object
-  function mockPage(url, selectorResult) {
+  function mockPage(url, selectorResult, evaluateFn) {
     return {
       url: () => url,
       $: async () => selectorResult ? {
         evaluate: async (fn) => fn({ tagName: 'DIV' })
-      } : null
+      } : null,
+      evaluate: evaluateFn || (async () => null)
     };
   }
 
@@ -275,6 +343,38 @@ describe('checkAuthSuccess', () => {
     assert.equal(result.success, false);
   });
 
+  it('detects success by localStorage match', async () => {
+    const page = mockPage('https://discord.com/channels/@me', false, async (fn, args) => {
+      // Simulate localStorage returning a token
+      return 'some-auth-token';
+    });
+    const ctx = mockContext();
+    const result = await checkAuthSuccess(page, ctx, 'https://discord.com/login', {
+      successLocalStorage: { origin: 'https://discord.com', key: 'token' }
+    });
+    assert.equal(result.success, true);
+  });
+
+  it('localStorage returns false when key not found', async () => {
+    const page = mockPage('https://discord.com/login', false, async () => null);
+    const ctx = mockContext();
+    const result = await checkAuthSuccess(page, ctx, 'https://discord.com/login', {
+      successLocalStorage: { origin: 'https://discord.com', key: 'token' }
+    });
+    assert.equal(result.success, false);
+  });
+
+  it('localStorage handles evaluate errors gracefully', async () => {
+    const page = mockPage('https://discord.com/login', false, async () => {
+      throw new Error('evaluate error');
+    });
+    const ctx = mockContext();
+    const result = await checkAuthSuccess(page, ctx, 'https://discord.com/login', {
+      successLocalStorage: { origin: 'https://discord.com', key: 'token' }
+    });
+    assert.equal(result.success, false);
+  });
+
   it('uses URL-change heuristic when no explicit conditions', async () => {
     const page = mockPage('https://example.com/dashboard');
     const ctx = mockContext();
@@ -319,7 +419,8 @@ describe('checkAuthSuccess', () => {
       url: () => 'https://github.com',
       $: async () => ({
         evaluate: async (fn) => fn({ tagName: 'META', hasAttribute: () => true, getAttribute: () => '' })
-      })
+      }),
+      evaluate: async () => null
     };
     const ctx = mockContext();
     const result = await checkAuthSuccess(page, ctx, 'https://github.com/login', {
@@ -333,6 +434,16 @@ describe('checkAuthSuccess', () => {
     const ctx = { cookies: async () => { throw new Error('cookie error'); } };
     const result = await checkAuthSuccess(page, ctx, 'https://github.com/login', {
       successCookie: { domain: '.github.com', name: 'logged_in', value: 'yes' }
+    });
+    assert.equal(result.success, false);
+  });
+
+  it('heuristic not used when successLocalStorage is set', async () => {
+    const page = mockPage('https://discord.com/some-other-page', false, async () => null);
+    const ctx = mockContext();
+    // successLocalStorage is set but key not found; heuristic should NOT kick in
+    const result = await checkAuthSuccess(page, ctx, 'https://discord.com/login', {
+      successLocalStorage: { origin: 'https://discord.com', key: 'token' }
     });
     assert.equal(result.success, false);
   });
