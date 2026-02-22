@@ -203,4 +203,12 @@ describe('updateSession', () => {
     const store = getStore();
     assert.throws(() => store.updateSession('nope', {}), /not found/);
   });
+
+  it('stores and retrieves lastUrl', () => {
+    const store = getStore();
+    store.createSession('nav');
+    store.updateSession('nav', { lastUrl: 'https://example.com/dashboard' });
+    const meta = store.getSession('nav');
+    assert.equal(meta.lastUrl, 'https://example.com/dashboard');
+  });
 });

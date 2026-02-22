@@ -386,6 +386,12 @@ async function runAction(sessionName, action, actionArgs, opts) {
     context = browser.context;
     page = browser.page;
 
+    if (action !== 'goto' && session.lastUrl && session.lastUrl !== 'about:blank') {
+      try {
+        await page.goto(session.lastUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+      } catch { /* ignore - best effort restoration */ }
+    }
+
     await randomDelay();
 
     let result;
@@ -547,6 +553,13 @@ async function runAction(sessionName, action, actionArgs, opts) {
       }
     }
 
+    try {
+      const currentUrl = page.url();
+      if (currentUrl && currentUrl !== 'about:blank') {
+        sessionStore.updateSession(sessionName, { lastUrl: currentUrl });
+      }
+    } catch {}
+
     await closeBrowser(sessionName, context);
     sessionStore.unlockSession(sessionName);
     output({ ok: true, command: `run ${action}`, session: sessionName, result });
@@ -555,6 +568,12 @@ async function runAction(sessionName, action, actionArgs, opts) {
     let snapshot = null;
     if (page) {
       try { snapshot = await getSnapshot(page); } catch { /* ignore */ }
+      try {
+        const currentUrl = page.url();
+        if (currentUrl && currentUrl !== 'about:blank') {
+          sessionStore.updateSession(sessionName, { lastUrl: currentUrl });
+        }
+      } catch { /* ignore */ }
     }
     if (context) {
       try { await closeBrowser(sessionName, context); } catch { /* ignore */ }
