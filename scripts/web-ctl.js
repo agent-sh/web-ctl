@@ -5,7 +5,7 @@ const sessionStore = require('./session-store');
 const { launchBrowser, closeBrowser, randomDelay, waitForStable } = require('./browser-launcher');
 const { runAuthFlow } = require('./auth-flow');
 const { sanitizeWebContent, wrapOutput } = require('./redact');
-const { listProviders, resolveAuthOptions } = require('./auth-providers');
+const { listProviders, resolveAuthOptions, loadCustomProviders } = require('./auth-providers');
 
 const path = require('path');
 
@@ -102,7 +102,7 @@ async function sessionStart(name) {
 }
 
 async function sessionAuth(name, opts) {
-  // Resolve provider defaults if --provider is set
+  if (opts.providersFile) loadCustomProviders(opts.providersFile);
   let resolved;
   try {
     resolved = resolveAuthOptions(opts.provider, opts);
@@ -559,6 +559,7 @@ async function main() {
         await sessionSave(name);
         break;
       case 'providers':
+        if (opts && opts.providersFile) loadCustomProviders(opts.providersFile);
         output({ ok: true, command: 'session providers', providers: listProviders() });
         break;
       case 'list':

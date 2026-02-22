@@ -39,7 +39,13 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <session-name> --provider <p
 
 Available providers: github, google, microsoft, x (alias: twitter), reddit, discord, slack, linkedin, gitlab, atlassian, aws-console (alias: aws), notion.
 
-For custom sites, specify the URL and success conditions manually:
+For custom or self-hosted providers, create a JSON file following the same schema as the built-in providers and pass it via `--providers-file`:
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <session-name> --provider my-corp --providers-file ./custom-providers.json
+```
+
+For one-off custom sites, specify the URL and success conditions manually:
 
 ```bash
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth <session-name> --url <login-url> [--success-url <url>] [--success-selector <selector>] [--timeout <seconds>]

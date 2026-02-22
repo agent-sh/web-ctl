@@ -2,7 +2,10 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { getProvider, listProviders, resolveAuthOptions } = require('../scripts/auth-providers');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { getProvider, listProviders, resolveAuthOptions, loadCustomProviders } = require('../scripts/auth-providers');
 const { checkAuthSuccess } = require('../scripts/auth-check');
 const providers = require('../scripts/providers.json');
 
@@ -135,6 +138,59 @@ describe('resolveAuthOptions', () => {
     const opts = resolveAuthOptions('google', {});
     assert.ok(opts.captchaSelectors);
     assert.ok(opts.captchaSelectors.length > 0);
+  });
+});
+
+// ============ loadCustomProviders ============
+
+describe('loadCustomProviders', () => {
+  it('loads custom providers from JSON file', () => {
+    const tmpFile = path.join(os.tmpdir(), `test-providers-${Date.now()}.json`);
+    const custom = [{ slug: 'myapp', name: 'My App', loginUrl: 'https://myapp.example.com/login', successUrl: 'https://myapp.example.com/dashboard' }];
+    fs.writeFileSync(tmpFile, JSON.stringify(custom));
+    try {
+      loadCustomProviders(tmpFile);
+      const p = getProvider('myapp');
+      assert.ok(p);
+      assert.equal(p.name, 'My App');
+      assert.equal(p.loginUrl, 'https://myapp.example.com/login');
+    } finally {
+      fs.unlinkSync(tmpFile);
+      loadCustomProviders(null); // reset
+    }
+  });
+
+  it('custom provider overrides built-in with same slug', () => {
+    const tmpFile = path.join(os.tmpdir(), `test-providers-${Date.now()}.json`);
+    const custom = [{ slug: 'github', name: 'GitHub Enterprise', loginUrl: 'https://github.myco.com/login', successUrl: 'https://github.myco.com' }];
+    fs.writeFileSync(tmpFile, JSON.stringify(custom));
+    try {
+      loadCustomProviders(tmpFile);
+      const p = getProvider('github');
+      assert.equal(p.name, 'GitHub Enterprise');
+      assert.equal(p.loginUrl, 'https://github.myco.com/login');
+    } finally {
+      fs.unlinkSync(tmpFile);
+      loadCustomProviders(null); // reset
+    }
+  });
+
+  it('ignores nonexistent file', () => {
+    loadCustomProviders('/nonexistent/path.json');
+    assert.ok(getProvider('github')); // built-ins still work
+  });
+
+  it('ignores entries without slug or loginUrl', () => {
+    const tmpFile = path.join(os.tmpdir(), `test-providers-${Date.now()}.json`);
+    fs.writeFileSync(tmpFile, JSON.stringify([{ name: 'No Slug' }, { slug: 'valid', loginUrl: 'https://valid.com' }]));
+    try {
+      loadCustomProviders(tmpFile);
+      assert.equal(getProvider('no-slug'), null);
+      assert.ok(getProvider('valid'));
+    } finally {
+      fs.unlinkSync(tmpFile);
+      loadCustomProviders(null);
+    }
   });
 });
 

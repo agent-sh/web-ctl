@@ -1,16 +1,41 @@
 'use strict';
 
-const providers = require('./providers.json');
+const fs = require('fs');
+const builtinProviders = require('./providers.json');
 
-// Build lookup map: slug and aliases -> provider
 const providerMap = new Map();
-for (const p of providers) {
-  providerMap.set(p.slug, p);
-  if (p.aliases) {
-    for (const alias of p.aliases) {
-      providerMap.set(alias, p);
+let allProviders = [...builtinProviders];
+
+function rebuildMap(providerList) {
+  providerMap.clear();
+  for (const p of providerList) {
+    providerMap.set(p.slug, p);
+    if (p.aliases) {
+      for (const alias of p.aliases) {
+        providerMap.set(alias, p);
+      }
     }
   }
+}
+
+rebuildMap(allProviders);
+
+/**
+ * Load custom providers from a JSON file and merge with built-ins.
+ * Custom providers with the same slug override built-in ones.
+ */
+function loadCustomProviders(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return;
+  const custom = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  if (!Array.isArray(custom)) return;
+
+  const builtinMap = new Map(builtinProviders.map(p => [p.slug, p]));
+  for (const cp of custom) {
+    if (!cp.slug || !cp.loginUrl) continue;
+    builtinMap.set(cp.slug, cp);
+  }
+  allProviders = [...builtinMap.values()];
+  rebuildMap(allProviders);
 }
 
 /**
@@ -26,7 +51,7 @@ function getProvider(name) {
  * List all providers with slug, name, and loginUrl.
  */
 function listProviders() {
-  return providers.map(p => ({ slug: p.slug, name: p.name, loginUrl: p.loginUrl }));
+  return allProviders.map(p => ({ slug: p.slug, name: p.name, loginUrl: p.loginUrl }));
 }
 
 /**
@@ -50,7 +75,6 @@ function resolveAuthOptions(providerName, cliOpts = {}) {
     twoFactorHint: cliOpts.twoFactorHint || provider.twoFactorHint || undefined
   };
 
-  // Merge captcha selectors - provider-specific ones come first
   if (provider.captchaSelectors && provider.captchaSelectors.length > 0) {
     merged.captchaSelectors = provider.captchaSelectors;
   }
@@ -58,12 +82,10 @@ function resolveAuthOptions(providerName, cliOpts = {}) {
     merged.captchaTextPatterns = provider.captchaTextPatterns;
   }
 
-  // CLI options override everything they explicitly set
   if (cliOpts.timeout) merged.timeout = cliOpts.timeout;
   if (cliOpts.vnc) merged.vnc = cliOpts.vnc;
   if (cliOpts.port) merged.port = cliOpts.port;
 
-  // Clean undefined values
   for (const key of Object.keys(merged)) {
     if (merged[key] === undefined) delete merged[key];
   }
@@ -71,4 +93,4 @@ function resolveAuthOptions(providerName, cliOpts = {}) {
   return merged;
 }
 
-module.exports = { getProvider, listProviders, resolveAuthOptions };
+module.exports = { getProvider, listProviders, resolveAuthOptions, loadCustomProviders };
