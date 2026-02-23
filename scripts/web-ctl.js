@@ -196,7 +196,7 @@ async function sessionAuth(name, opts) {
     port: resolved.port ? parseInt(resolved.port, 10) : undefined,
     verifyUrl: resolved.verifyUrl,
     verifySelector: resolved.verifySelector,
-    minWait: resolved.minWait ? parseInt(resolved.minWait, 10) : undefined
+    minWait: resolved.minWait != null ? Math.max(0, Math.min(300, parseInt(resolved.minWait, 10) || 0)) : undefined
   });
 
   output({ command: 'session auth', ...result });

@@ -566,6 +566,16 @@ describe('checkAuthSuccess', () => {
     assert.equal(result.success, true);
   });
 
+  it('loginUrl does not block success on a non-login path', async () => {
+    const page = mockPage('https://example.com/success/page');
+    const ctx = mockContext();
+    const result = await checkAuthSuccess(page, ctx, 'https://example.com/login', {
+      successUrl: 'https://example.com/success',
+      loginUrl: 'https://example.com/login'
+    });
+    assert.equal(result.success, true);
+  });
+
   it('loginUrl exclusion on same-origin different paths', async () => {
     const ctx = mockContext();
 
