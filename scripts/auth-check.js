@@ -8,7 +8,7 @@
  * @param {import('playwright').Page} page
  * @param {import('playwright').BrowserContext} context
  * @param {string} originalUrl - The login URL we started on
- * @param {object} options - { successUrl, successSelector, successCookie }
+ * @param {object} options - { successUrl, successSelector, successCookie, loginUrl }
  * @returns {{ success: boolean, currentUrl: string }}
  */
 const HEURISTIC_EXCLUDE = ['login', 'signin', 'auth', 'oauth', 'sso', 'error', 'failed'];
@@ -22,7 +22,18 @@ async function checkAuthSuccess(page, context, originalUrl, options = {}) {
       const expected = new URL(options.successUrl);
       const actual = new URL(currentUrl);
       if (actual.origin === expected.origin && actual.pathname.startsWith(expected.pathname)) {
-        return { success: true, currentUrl };
+        if (options.loginUrl) {
+          const login = new URL(options.loginUrl);
+          if (login.pathname.length > 1
+              && actual.origin === login.origin
+              && actual.pathname.startsWith(login.pathname)) {
+            // Still on login page - not a success, fall through
+          } else {
+            return { success: true, currentUrl };
+          }
+        } else {
+          return { success: true, currentUrl };
+        }
       }
     } catch {
       // Malformed URL - fall through
