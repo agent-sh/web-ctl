@@ -58,6 +58,19 @@ describe('verifyHeadless', () => {
     assert.equal(result, null);
   });
 
+  it('rejects non-http/https URLs', async () => {
+    const result = await verifyHeadless('test-session', { verifyUrl: 'file:///etc/passwd' });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'invalid_url');
+    assert.equal(result.reason, 'invalid_url_scheme');
+  });
+
+  it('rejects javascript: URLs', async () => {
+    const result = await verifyHeadless('test-session', { verifyUrl: 'javascript:alert(1)' });
+    assert.equal(result.ok, false);
+    assert.equal(result.error, 'invalid_url');
+  });
+
   it('returns ok:true when page loads and verifySelector matches', async () => {
     const launcher = mockLauncher({
       url: 'https://github.com',
@@ -177,6 +190,7 @@ describe('verifyHeadless', () => {
 
     assert.equal(result.ok, false);
     assert.equal(result.error, 'verify_error');
+    assert.equal(result.reason, 'browser_error');
     assert.equal(result.message, 'Browser launch failed');
   });
 
@@ -191,6 +205,7 @@ describe('verifyHeadless', () => {
 
     assert.equal(result.ok, false);
     assert.equal(result.error, 'verify_error');
+    assert.equal(result.reason, 'navigation_timeout');
     assert.ok(result.message.includes('Timeout'));
   });
 

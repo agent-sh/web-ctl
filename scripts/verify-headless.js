@@ -3,6 +3,7 @@
 const { launchBrowser } = require('./browser-launcher');
 
 const LOGIN_KEYWORDS = ['login', 'signin', 'auth', 'oauth', 'sso', 'error', 'failed'];
+const ALLOWED_SCHEMES = /^https?:\/\//i;
 
 /**
  * Post-auth headless verification.
@@ -21,6 +22,19 @@ const LOGIN_KEYWORDS = ['login', 'signin', 'auth', 'oauth', 'sso', 'error', 'fai
  */
 async function verifyHeadless(sessionName, options = {}, _launcher) {
   if (!options.verifyUrl) return null;
+
+  if (!ALLOWED_SCHEMES.test(options.verifyUrl)) {
+    return {
+      ok: false,
+      url: options.verifyUrl,
+      currentUrl: null,
+      status: null,
+      error: 'invalid_url',
+      reason: 'invalid_url_scheme',
+      message: `Only http:// and https:// URLs are allowed. Got: ${options.verifyUrl}`,
+      duration: 0
+    };
+  }
 
   const launch = _launcher || launchBrowser;
   const start = Date.now();
@@ -85,13 +99,16 @@ async function verifyHeadless(sessionName, options = {}, _launcher) {
       duration: Date.now() - start
     };
   } catch (err) {
+    const reason = err.message && err.message.includes('Timeout')
+      ? 'navigation_timeout'
+      : 'browser_error';
     return {
       ok: false,
       url: options.verifyUrl,
       currentUrl: null,
       status: null,
       error: 'verify_error',
-      reason: 'verify_error',
+      reason,
       message: err.message,
       duration: Date.now() - start
     };

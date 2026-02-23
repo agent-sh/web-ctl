@@ -226,6 +226,11 @@ describe('resolveAuthOptions', () => {
     assert.equal(opts.verifyUrl, 'https://github.com/settings');
   });
 
+  it('CLI verifySelector overrides provider', () => {
+    const opts = resolveAuthOptions('github', { verifySelector: '#custom-selector' });
+    assert.equal(opts.verifySelector, '#custom-selector');
+  });
+
   it('omits verifyUrl when not set', () => {
     const opts = resolveAuthOptions('google', {});
     assert.equal(opts.verifyUrl, undefined);
