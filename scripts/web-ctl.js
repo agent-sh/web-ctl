@@ -195,7 +195,8 @@ async function sessionAuth(name, opts) {
     vnc: !!resolved.vnc,
     port: resolved.port ? parseInt(resolved.port, 10) : undefined,
     verifyUrl: resolved.verifyUrl,
-    verifySelector: resolved.verifySelector
+    verifySelector: resolved.verifySelector,
+    minWait: resolved.minWait ? parseInt(resolved.minWait, 10) : undefined
   });
 
   output({ command: 'session auth', ...result });
@@ -686,6 +687,7 @@ Session commands:
     [--success-cookie <json>]   Cookie presence to detect auth completion
     [--providers-file <path>]   Load custom providers from JSON file
     [--timeout <seconds>]       Timeout in seconds (default: 300)
+    [--min-wait <seconds>]      Grace period before auth checks (default: 5)
   providers                     List available auth providers
   save <name>                   Save session state
   list                          List all sessions

@@ -143,6 +143,9 @@ async function runVncAuth(sessionName, url, options = {}) {
 
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
+    const minWaitMs = (options.minWait || 5) * 1000;
+    await new Promise(resolve => setTimeout(resolve, minWaitMs));
+
     // 5. Build VNC URL and notify
     const hostname = getHostname();
     const isPrivateIp = /^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(hostname);
