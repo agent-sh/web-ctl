@@ -10,6 +10,9 @@
 - 12 action macros for common UI patterns: `select-option`, `tab-switch`, `modal-dismiss`, `form-fill`, `search-select`, `date-pick`, `file-upload`, `hover-reveal`, `scroll-to`, `wait-toast`, `iframe-action`, `login`
 - `file-upload` macro enforces path allowlist (`/tmp`, cwd, `WEB_CTL_UPLOAD_DIR`) and blocks dotfile paths
 - `login` macro supports `WEB_CTL_USER` / `WEB_CTL_PASS` environment variables as a safer alternative to CLI flags
+- Post-auth headless verification automatically tests target service accessibility after successful authentication, returning optional `headlessVerification` object in auth response
+- `--verify-url` and `--verify-selector` flags for `session auth` to configure post-auth verification on a per-invocation basis
+- `verifyUrl` and `verifySelector` provider fields for built-in providers (github, gitlab, microsoft) to automatically verify API/dashboard access after login
 
 ### Fixed
 - Boolean flags (`--allow-evaluate`, `--no-snapshot`, `--wait-stable`, `--vnc`, `--exact`, `--accept`, `--submit`, `--dismiss`) no longer consume the next positional argument as their value (#27)

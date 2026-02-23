@@ -4,6 +4,7 @@ const { spawn, execFileSync } = require('child_process');
 const { launchBrowser, closeBrowser } = require('./browser-launcher');
 const sessionStore = require('./session-store');
 const { checkAuthSuccess } = require('./auth-check');
+const { verifyHeadless } = require('./verify-headless');
 const net = require('net');
 
 /**
@@ -174,8 +175,22 @@ async function runVncAuth(sessionName, url, options = {}) {
       });
 
       if (result.success) {
-        await cleanup(sessionName, context, procs, { authenticated: true });
-        return { ok: true, session: sessionName, url: result.currentUrl, ...info };
+        try { await closeBrowser(sessionName, context); } catch { /* ignore */ }
+        context = null;
+        try { sessionStore.updateSession(sessionName, { status: 'authenticated' }); } catch { /* ignore */ }
+        const headlessVerification = await verifyHeadless(sessionName, {
+          verifyUrl: options.verifyUrl,
+          verifySelector: options.verifySelector
+        });
+        try { sessionStore.unlockSession(sessionName); } catch { /* ignore */ }
+        for (const proc of procs) {
+          if (proc && proc.exitCode === null) {
+            try { process.kill(-proc.pid, 'SIGTERM'); } catch { /* ignore */ }
+          }
+        }
+        const authResult = { ok: true, session: sessionName, url: result.currentUrl, ...info };
+        if (headlessVerification) authResult.headlessVerification = headlessVerification;
+        return authResult;
       }
 
       await new Promise(resolve => setTimeout(resolve, pollInterval));

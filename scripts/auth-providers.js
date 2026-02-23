@@ -85,7 +85,9 @@ function resolveAuthOptions(providerName, cliOpts = {}) {
     twoFactorHint: cliOpts.twoFactorHint || provider.twoFactorHint || undefined,
     twoFactorSelectors: provider.twoFactorSelectors || undefined,
     flowType: provider.flowType || undefined,
-    notes: provider.notes || undefined
+    notes: provider.notes || undefined,
+    verifyUrl: cliOpts.verifyUrl || provider.verifyUrl || undefined,
+    verifySelector: cliOpts.verifySelector || provider.verifySelector || undefined
   };
 
   if (provider.captchaSelectors && provider.captchaSelectors.length > 0) {
