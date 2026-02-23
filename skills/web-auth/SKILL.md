@@ -2,7 +2,7 @@
 name: web-auth
 description: "Authenticate to websites with human-in-the-loop browser handoff. Use when user needs to log into a website, complete 2FA, or solve CAPTCHAs for agent access."
 version: 1.0.0
-argument-hint: "[session-name] --provider [provider] | --url [login-url] [--success-url [url]] [--timeout [seconds]] [--vnc]"
+argument-hint: "[session-name] --provider [provider] | --url [login-url] [--success-url [url]] [--timeout [seconds]] [--min-wait [seconds]] [--vnc]"
 ---
 
 # Web Auth Skill
