@@ -161,6 +161,7 @@ This eliminates the common click-snapshot-check loop that wastes agent turns on 
 | `--timeout <ms>` | `click-wait`, `wait`, `checkpoint` | Action timeout |
 | `--success-url <url>` | `session auth` | URL to detect auth completion |
 | `--success-selector <sel>` | `session auth` | DOM selector to detect auth completion |
+| `--min-wait <seconds>` | `session auth` | Grace period before auth polling starts (default: 5) |
 | `--vnc` | `session auth` | Use VNC for headed browser on remote servers |
 | `--filter <pattern>` | `network` | Filter captured requests by URL pattern |
 | `--path <file>` | `screenshot` | Custom screenshot path (within session dir) |

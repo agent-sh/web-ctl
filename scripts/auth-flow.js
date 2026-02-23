@@ -91,13 +91,17 @@ async function runAuthFlow(sessionName, url, options = {}) {
 
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
 
+    const minWaitMs = (options.minWait || 5) * 1000;
+    await new Promise(resolve => setTimeout(resolve, minWaitMs));
+
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
       const result = await checkAuthSuccess(page, context, url, {
         successUrl: options.successUrl,
         successSelector: options.successSelector,
-        successCookie: options.successCookie
+        successCookie: options.successCookie,
+        loginUrl: url
       });
 
       if (result.success) {
