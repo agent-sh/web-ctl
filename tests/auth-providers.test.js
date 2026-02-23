@@ -236,6 +236,17 @@ describe('resolveAuthOptions', () => {
     assert.equal(opts.verifyUrl, undefined);
     assert.ok(!('verifyUrl' in opts));
   });
+
+  it('passes through minWait from CLI opts', () => {
+    const opts = resolveAuthOptions('github', { minWait: 10 });
+    assert.equal(opts.minWait, 10);
+  });
+
+  it('uses provider minWait as default', () => {
+    // Built-in providers do not set minWait, so it should be omitted
+    const opts = resolveAuthOptions('github', {});
+    assert.ok(!('minWait' in opts));
+  });
 });
 
 // ============ loadCustomProviders ============
@@ -514,5 +525,64 @@ describe('checkAuthSuccess', () => {
       successLocalStorage: { origin: 'https://discord.com', key: 'token' }
     });
     assert.equal(result.success, false);
+  });
+
+  it('successUrl with root pathname does not match login page when loginUrl provided', async () => {
+    const page = mockPage('https://www.instagram.com/accounts/login/');
+    const ctx = mockContext();
+    const result = await checkAuthSuccess(page, ctx, 'https://www.instagram.com/accounts/login/', {
+      successUrl: 'https://www.instagram.com/',
+      loginUrl: 'https://www.instagram.com/accounts/login/'
+    });
+    assert.equal(result.success, false);
+  });
+
+  it('successUrl matches after navigating away from login page', async () => {
+    const page = mockPage('https://www.instagram.com/');
+    const ctx = mockContext();
+    const result = await checkAuthSuccess(page, ctx, 'https://www.instagram.com/accounts/login/', {
+      successUrl: 'https://www.instagram.com/',
+      loginUrl: 'https://www.instagram.com/accounts/login/'
+    });
+    assert.equal(result.success, true);
+  });
+
+  it('successUrl still works without loginUrl (backward compat)', async () => {
+    const page = mockPage('https://www.instagram.com/');
+    const ctx = mockContext();
+    const result = await checkAuthSuccess(page, ctx, 'https://www.instagram.com/accounts/login/', {
+      successUrl: 'https://www.instagram.com/'
+    });
+    assert.equal(result.success, true);
+  });
+
+  it('loginUrl exclusion skipped when loginUrl pathname is /', async () => {
+    const page = mockPage('https://example.com/dashboard');
+    const ctx = mockContext();
+    const result = await checkAuthSuccess(page, ctx, 'https://example.com/', {
+      successUrl: 'https://example.com/',
+      loginUrl: 'https://example.com/'
+    });
+    assert.equal(result.success, true);
+  });
+
+  it('loginUrl exclusion on same-origin different paths', async () => {
+    const ctx = mockContext();
+
+    // Still on login page - should be rejected
+    const loginPage = mockPage('https://github.com/login');
+    const result1 = await checkAuthSuccess(loginPage, ctx, 'https://github.com/login', {
+      successUrl: 'https://github.com',
+      loginUrl: 'https://github.com/login'
+    });
+    assert.equal(result1.success, false);
+
+    // Navigated to dashboard - should succeed
+    const dashboard = mockPage('https://github.com/dashboard');
+    const result2 = await checkAuthSuccess(dashboard, ctx, 'https://github.com/login', {
+      successUrl: 'https://github.com',
+      loginUrl: 'https://github.com/login'
+    });
+    assert.equal(result2.success, true);
   });
 });
