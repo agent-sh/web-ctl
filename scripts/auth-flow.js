@@ -97,7 +97,8 @@ async function runAuthFlow(sessionName, url, options = {}) {
       const result = await checkAuthSuccess(page, context, url, {
         successUrl: options.successUrl,
         successSelector: options.successSelector,
-        successCookie: options.successCookie
+        successCookie: options.successCookie,
+        loginUrl: url
       });
 
       if (result.success) {
