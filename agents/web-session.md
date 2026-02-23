@@ -64,6 +64,8 @@ To list available providers: `node ${PLUGIN_ROOT}/scripts/web-ctl.js session pro
 
 Tell the user a browser window will open for them to log in.
 
+**Automatic Headless Verification**: After successful auth, the system automatically verifies that the target service (e.g., API endpoint, dashboard) is accessible using a headless browser. If the verification fails, the auth flow still succeeds, but the `headlessVerification` field in the response indicates the issue. This helps catch cases where login succeeds but the target service requires additional steps or is unavailable.
+
 ### 2.5. Verify Auth (Optional Pre-Flight)
 
 If you need to confirm the session is authenticated before proceeding, use `session verify`:

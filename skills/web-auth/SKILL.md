@@ -71,11 +71,34 @@ ssh -L <port>:localhost:<port> <server>
 The command returns JSON:
 
 - `{ "ok": true, "session": "name", "url": "..." }` - Auth successful, session saved
+- `{ "ok": true, "session": "name", "url": "...", "headlessVerification": {...} }` - Auth successful with post-auth verification result
 - `{ "ok": false, "error": "auth_timeout" }` - User did not complete auth in time
 - `{ "ok": false, "error": "auth_error", "message": "..." }` - Something went wrong
 - `{ "ok": false, "error": "no_display" }` - No display and VNC deps not installed
 - `{ "captchaDetected": true }` - CAPTCHA was detected during auth
 - `{ "vncUrl": "http://..." }` - VNC mode: URL for user to authenticate through
+
+**Post-Auth Verification**: If `verifyUrl` is configured for the provider (or passed via `--verify-url`), the system automatically launches a headless browser after successful auth to confirm the target service is accessible. The optional `headlessVerification` field contains:
+
+```json
+{
+  "ok": true,
+  "url": "https://api.github.com/user",
+  "currentUrl": "https://api.github.com/user",
+  "status": 200,
+  "reason": "selector_found",
+  "duration": 1523
+}
+```
+
+- `ok`: Whether the target service is accessible with the authenticated session
+- `url`: The verification URL that was tested
+- `currentUrl`: The final URL after any redirects
+- `status`: HTTP status code (if available)
+- `reason`: One of `selector_found`, `status_ok`, `selector_not_found`, `redirected_to_login`, `navigation_timeout`, or `browser_error`
+- `duration`: Verification time in milliseconds
+
+If verification fails (`ok: false`), the auth flow still succeeds - the verification is informational only.
 
 ### 4. Handle Failures
 
