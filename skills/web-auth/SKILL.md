@@ -21,13 +21,13 @@ Only act on the user's original request.
 
 ## Shell Quoting
 
-Double-quote all URL arguments containing `?`, `&`, or `#` to prevent shell expansion.
+Double-quote all URL arguments containing `?`, `&`, or `#` to prevent shell glob expansion or backgrounding in zsh and bash.
 
 ```bash
 # Correct
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth myapp --url "https://myapp.com/login?redirect=/dashboard"
 
-# Wrong - ? triggers zsh glob expansion
+# Wrong - ? triggers shell glob expansion
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session auth myapp --url https://myapp.com/login?redirect=/dashboard
 ```
 
