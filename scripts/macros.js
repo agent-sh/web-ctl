@@ -753,6 +753,20 @@ async function extract(page, actionArgs, opts, helpers) {
             return img ? img.getAttribute('src') : null;
           }
           default: {
+            // Table column_N field support
+            var colMatch = name.match(/^column_(\d+)$/);
+            if (colMatch) {
+              var colNum = parseInt(colMatch[1], 10);
+              var tdIdx = 0;
+              var ch = el.children;
+              for (var ci = 0; ci < ch.length; ci++) {
+                if (ch[ci].tagName === 'TD') {
+                  tdIdx++;
+                  if (tdIdx === colNum) return truncate((ch[ci].textContent || '').trim());
+                }
+              }
+              return null;
+            }
             // Generic: try [class*=name] (sanitize for defense-in-depth)
             var safeName = name.replace(/[^a-zA-Z0-9_-]/g, '');
             if (!safeName) return null;
@@ -919,12 +933,25 @@ async function extract(page, actionArgs, opts, helpers) {
     var keys = Object.keys(groups);
     for (var k = 0; k < keys.length; k++) {
       var group = groups[keys[k]];
-      if (group.elements.length < 3) continue;
 
-      // Cache signature on first element, then compare
-      var sig = getSignature(group.elements[0]);
+      // For table TR groups, skip header row (all-TH children) in signature check
+      var sigStart = 0;
+      if (group.tag === 'TR') {
+        var pt = group.parent.tagName;
+        if (pt === 'TBODY' || pt === 'TABLE' || pt === 'THEAD') {
+          var firstKids = group.elements[0].children;
+          var allTH = firstKids.length > 0;
+          for (var th = 0; th < firstKids.length; th++) {
+            if (firstKids[th].tagName !== 'TH') { allTH = false; break; }
+          }
+          if (allTH) sigStart = 1;
+        }
+      }
+      if (group.elements.length - sigStart < 3) continue;
+
+      var sig = getSignature(group.elements[sigStart]);
       var allSame = true;
-      for (var s = 1; s < group.elements.length; s++) {
+      for (var s = sigStart + 1; s < group.elements.length; s++) {
         if (getSignature(group.elements[s]) !== sig) {
           allSame = false;
           break;
@@ -935,6 +962,10 @@ async function extract(page, actionArgs, opts, helpers) {
       var score = group.elements.length;
       if (isContentArea(group.parent)) score *= 3;
       if (isNavArea(group.parent)) score *= 0.3;
+      if (group.tag === 'TR') {
+        var pt2 = group.parent.tagName;
+        if (pt2 === 'TBODY' || pt2 === 'TABLE' || pt2 === 'THEAD') score *= 2;
+      }
 
       if (score > bestScore) {
         bestScore = score;
@@ -1022,6 +1053,22 @@ async function extract(page, actionArgs, opts, helpers) {
       return item;
     }
 
+    function extractTableRowIndexed(tr) {
+      var item = {};
+      var colIdx = 0;
+      var cells = tr.children;
+      for (var i = 0; i < cells.length; i++) {
+        if (cells[i].tagName === 'TD') {
+          colIdx++;
+          var cellText = truncate((cells[i].textContent || '').trim());
+          if (cellText) item['column_' + colIdx] = cellText;
+        }
+      }
+      var a = tr.querySelector('a[href]');
+      if (a) item.url = a.getAttribute('href');
+      return item;
+    }
+
     var tableHeaders = null;
     var headerRow = null;
     if (isTableGroup(bestGroup)) {
@@ -1038,6 +1085,8 @@ async function extract(page, actionArgs, opts, helpers) {
       var item;
       if (tableHeaders && els[e] !== headerRow) {
         item = extractTableRow(els[e], tableHeaders);
+      } else if (!tableHeaders && isTableGroup(bestGroup)) {
+        item = extractTableRowIndexed(els[e]);
       } else if (!tableHeaders) {
         item = extractItem(els[e]);
       } else {
