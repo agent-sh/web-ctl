@@ -504,6 +504,13 @@ function createMockPage(options = {}) {
     url: () => currentUrl,
     goto: async (url) => { currentUrl = url; },
     locator: (selector) => matchLocator(selector),
+    // Support $$eval for paginate's batch text extraction
+    $$eval: async (selector) => {
+      if (options.items && options.items[selector]) {
+        return options.items[selector].map(t => (t || '').trim()).filter(Boolean);
+      }
+      return [];
+    },
     getByRole: (role, opts) => {
       // Heuristic 2: role-based text matching
       if (options.roleLink && role === 'link') {
@@ -741,8 +748,8 @@ describe('paginate success paths', () => {
     // the page returns as items and pagination links as navigation happens.
     let pageIndex = 0;
     const pageData = [
-      { items: ['Page1-A', 'Page1-B'], nextHref: '/list?p=2' },
-      { items: ['Page2-A', 'Page2-B'], nextHref: '/list?p=3' },
+      { items: ['Page1-A', 'Page1-B'], nextHref: 'https://example.com/list?p=2' },
+      { items: ['Page2-A', 'Page2-B'], nextHref: 'https://example.com/list?p=3' },
       { items: ['Page3-A'], nextHref: null },
     ];
 
@@ -753,6 +760,11 @@ describe('paginate success paths', () => {
         currentUrl = url;
         pageIndex++;
       },
+      $$eval: async (selector) => {
+        const data = pageData[pageIndex];
+        if (!data || selector !== '.result') return [];
+        return data.items.filter(Boolean);
+      },
       locator: (selector) => {
         const data = pageData[pageIndex];
         if (!data) {
@@ -760,14 +772,6 @@ describe('paginate success paths', () => {
             count: async () => 0,
             first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }),
             all: async () => [],
-          };
-        }
-
-        // Item selector
-        if (selector === '.result') {
-          return {
-            count: async () => data.items.length,
-            all: async () => data.items.map(text => ({ textContent: async () => text })),
           };
         }
 
@@ -815,8 +819,8 @@ describe('paginate success paths', () => {
   it('stops when max-items is reached across pages', async () => {
     let pageIndex = 0;
     const pageData = [
-      { items: ['A', 'B', 'C'], nextHref: '/p2' },
-      { items: ['D', 'E', 'F'], nextHref: '/p3' },
+      { items: ['A', 'B', 'C'], nextHref: 'https://example.com/p2' },
+      { items: ['D', 'E', 'F'], nextHref: 'https://example.com/p3' },
       { items: ['G', 'H'], nextHref: null },
     ];
 
@@ -824,13 +828,15 @@ describe('paginate success paths', () => {
     const page = {
       url: () => currentUrl,
       goto: async (url) => { currentUrl = url; pageIndex++; },
+      $$eval: async (selector) => {
+        const data = pageData[pageIndex];
+        if (!data || selector !== '.row') return [];
+        return data.items.filter(Boolean);
+      },
       locator: (selector) => {
         const data = pageData[pageIndex];
         if (!data) {
           return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
-        }
-        if (selector === '.row') {
-          return { all: async () => data.items.map(t => ({ textContent: async () => t })) };
         }
         if (selector.includes('rel="next"')) {
           if (data.nextHref) {
@@ -869,13 +875,15 @@ describe('paginate success paths', () => {
     const page = {
       url: () => currentUrl,
       goto: async (url) => { currentUrl = url; },
+      $$eval: async (selector) => {
+        const data = pageData[pageIndex];
+        if (!data || selector !== '.item') return [];
+        return data.items.filter(Boolean);
+      },
       locator: (selector) => {
         const data = pageData[pageIndex];
         if (!data) {
           return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
-        }
-        if (selector === '.item') {
-          return { all: async () => data.items.map(t => ({ textContent: async () => t })) };
         }
         // Return empty for all locator-based heuristics (rel, css, active page)
         return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
@@ -920,19 +928,21 @@ describe('paginate success paths', () => {
     // a next link, should mark hasMore=true
     let pageIndex = 0;
     const pageData = [
-      { items: ['P1'], nextHref: '/p2' },
-      { items: ['P2'], nextHref: '/p3' },
+      { items: ['P1'], nextHref: 'https://example.com/p2' },
+      { items: ['P2'], nextHref: 'https://example.com/p3' },
     ];
 
     let currentUrl = 'https://example.com/data';
     const page = {
       url: () => currentUrl,
       goto: async (url) => { currentUrl = url; pageIndex++; },
+      $$eval: async (selector) => {
+        const data = pageData[pageIndex] || pageData[pageData.length - 1];
+        if (selector !== '.r') return [];
+        return data.items.filter(Boolean);
+      },
       locator: (selector) => {
         const data = pageData[pageIndex] || pageData[pageData.length - 1];
-        if (selector === '.r') {
-          return { all: async () => data.items.map(t => ({ textContent: async () => t })) };
-        }
         if (selector.includes('rel="next"')) {
           if (data.nextHref) {
             const el = { count: async () => 1, first: () => el, isVisible: async () => true, evaluate: async () => 'a', getAttribute: async (a) => a === 'href' ? data.nextHref : null, click: async () => {} };
@@ -960,20 +970,22 @@ describe('paginate success paths', () => {
     let pageIndex = 0;
     const pageData = Array.from({ length: 7 }, (_, i) => ({
       items: [`Page${i + 1}`],
-      nextHref: i < 6 ? `/p${i + 2}` : null,
+      nextHref: i < 6 ? `https://example.com/p${i + 2}` : null,
     }));
 
     let currentUrl = 'https://example.com/long';
     const page = {
       url: () => currentUrl,
       goto: async (url) => { currentUrl = url; pageIndex++; },
+      $$eval: async (selector) => {
+        const data = pageData[pageIndex];
+        if (!data || selector !== '.x') return [];
+        return data.items.filter(Boolean);
+      },
       locator: (selector) => {
         const data = pageData[pageIndex];
         if (!data) {
           return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
-        }
-        if (selector === '.x') {
-          return { all: async () => data.items.map(t => ({ textContent: async () => t })) };
         }
         if (selector.includes('rel="next"')) {
           if (data.nextHref) {
@@ -1002,15 +1014,13 @@ describe('paginate success paths', () => {
     const page = {
       url: () => currentUrl,
       goto: async (url) => { currentUrl = url; pageIndex++; },
+      $$eval: async (selector) => {
+        if (selector !== '.z') return [];
+        return pageIndex === 0 ? ['Only'] : ['Done'];
+      },
       locator: (selector) => {
-        if (selector === '.z' && pageIndex === 0) {
-          return { all: async () => [{ textContent: async () => 'Only' }] };
-        }
-        if (selector === '.z') {
-          return { all: async () => [{ textContent: async () => 'Done' }] };
-        }
         if (selector.includes('rel="next"') && pageIndex === 0) {
-          const el = { count: async () => 1, first: () => el, isVisible: async () => true, evaluate: async () => 'a', getAttribute: async (a) => a === 'href' ? '/page2' : null, click: async () => {} };
+          const el = { count: async () => 1, first: () => el, isVisible: async () => true, evaluate: async () => 'a', getAttribute: async (a) => a === 'href' ? 'https://example.com/page2' : null, click: async () => {} };
           return { count: async () => 1, first: () => el };
         }
         return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
@@ -1021,7 +1031,271 @@ describe('paginate success paths', () => {
     const result = await macros['paginate'](page, [], { selector: '.z' }, stubHelpers);
 
     assert.equal(result.startUrl, 'https://example.com/start');
-    assert.equal(result.url, '/page2');
+    assert.equal(result.url, 'https://example.com/page2');
     assert.equal(result.pages, 2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// URL validation (open redirect prevention)
+// ---------------------------------------------------------------------------
+
+describe('URL validation in navigation', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+
+  it('next-page falls back to click for javascript: href', async () => {
+    let clicked = false;
+    const page = {
+      url: () => 'https://example.com/page/1',
+      goto: async () => { throw new Error('goto should not be called for javascript: href'); },
+      locator: (selector) => {
+        if (selector.includes('rel="next"')) {
+          const el = {
+            count: async () => 1,
+            first: () => el,
+            isVisible: async () => true,
+            evaluate: async () => 'a',
+            getAttribute: async (attr) => attr === 'href' ? 'javascript:void(0)' : null,
+            click: async () => { clicked = true; },
+          };
+          return { count: async () => 1, first: () => el };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }) };
+      },
+      getByRole: () => ({ count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    };
+
+    const result = await macros['next-page'](page, [], {}, stubHelpers);
+
+    assert.equal(clicked, true, 'should fall back to clicking the element');
+    assert.equal(result.nextPageDetected, 'rel-next');
+  });
+
+  it('next-page falls back to click for data: href', async () => {
+    let clicked = false;
+    const page = {
+      url: () => 'https://example.com/page/1',
+      goto: async () => { throw new Error('goto should not be called for data: href'); },
+      locator: (selector) => {
+        if (selector.includes('rel="next"')) {
+          const el = {
+            count: async () => 1,
+            first: () => el,
+            isVisible: async () => true,
+            evaluate: async () => 'a',
+            getAttribute: async (attr) => attr === 'href' ? 'data:text/html,<h1>evil</h1>' : null,
+            click: async () => { clicked = true; },
+          };
+          return { count: async () => 1, first: () => el };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }) };
+      },
+      getByRole: () => ({ count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    };
+
+    const result = await macros['next-page'](page, [], {}, stubHelpers);
+
+    assert.equal(clicked, true, 'should fall back to clicking the element');
+    assert.equal(result.nextPageDetected, 'rel-next');
+  });
+
+  it('paginate falls back to click for javascript: href in pagination loop', async () => {
+    let clickCount = 0;
+    let pageIndex = 0;
+    const pageData = [
+      { items: ['A'], hasNext: true },
+      { items: ['B'], hasNext: false },
+    ];
+
+    const page = {
+      url: () => 'https://example.com/list',
+      goto: async () => { throw new Error('goto should not be called for javascript: href'); },
+      $$eval: async (selector) => {
+        const data = pageData[pageIndex];
+        if (!data || selector !== '.item') return [];
+        return data.items;
+      },
+      locator: (selector) => {
+        const data = pageData[pageIndex];
+        if (!data) {
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+        }
+        if (selector.includes('rel="next"')) {
+          if (data.hasNext) {
+            const el = {
+              count: async () => 1,
+              first: () => el,
+              isVisible: async () => true,
+              evaluate: async () => 'a',
+              getAttribute: async (attr) => attr === 'href' ? 'javascript:loadMore()' : null,
+              click: async () => { clickCount++; pageIndex++; },
+            };
+            return { count: async () => 1, first: () => el };
+          }
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null }) };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+      },
+      getByRole: () => ({ count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    };
+
+    const result = await macros['paginate'](page, [], {
+      selector: '.item',
+      maxPages: '5',
+    }, stubHelpers);
+
+    assert.equal(clickCount, 1, 'should click instead of goto');
+    assert.equal(result.pages, 2);
+    assert.deepEqual(result.items, ['A', 'B']);
+  });
+
+  it('next-page uses goto for valid relative href', async () => {
+    let gotoUrl = null;
+    const page = {
+      url: () => 'https://example.com/page/1',
+      goto: async (url) => { gotoUrl = url; },
+      locator: (selector) => {
+        if (selector.includes('rel="next"')) {
+          const el = {
+            count: async () => 1,
+            first: () => el,
+            isVisible: async () => true,
+            evaluate: async () => 'a',
+            getAttribute: async (attr) => attr === 'href' ? '/page/2' : null,
+            click: async () => { throw new Error('should not click'); },
+          };
+          return { count: async () => 1, first: () => el };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }) };
+      },
+      getByRole: () => ({ count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    };
+
+    await macros['next-page'](page, [], {}, stubHelpers);
+
+    assert.equal(gotoUrl, '/page/2', 'should use goto for valid relative URL');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// hasMore logic correctness
+// ---------------------------------------------------------------------------
+
+describe('hasMore accuracy', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+
+  it('hasMore is false when last page has no next link even at maxPages', async () => {
+    // Only 2 pages exist, maxPages=2. The last page has no next link.
+    // hasMore should be false because there truly are no more pages.
+    let pageIndex = 0;
+    const pageData = [
+      { items: ['P1'], nextHref: 'https://example.com/p2' },
+      { items: ['P2'], nextHref: null },
+    ];
+
+    let currentUrl = 'https://example.com/data';
+    const page = {
+      url: () => currentUrl,
+      goto: async (url) => { currentUrl = url; pageIndex++; },
+      $$eval: async (selector) => {
+        const data = pageData[pageIndex];
+        if (!data || selector !== '.r') return [];
+        return data.items;
+      },
+      locator: (selector) => {
+        const data = pageData[pageIndex];
+        if (!data) {
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+        }
+        if (selector.includes('rel="next"')) {
+          if (data.nextHref) {
+            const el = { count: async () => 1, first: () => el, isVisible: async () => true, evaluate: async () => 'a', getAttribute: async (a) => a === 'href' ? data.nextHref : null, click: async () => {} };
+            return { count: async () => 1, first: () => el };
+          }
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null }) };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+      },
+      getByRole: () => ({ count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    };
+
+    const result = await macros['paginate'](page, [], {
+      selector: '.r',
+      maxPages: '2',
+    }, stubHelpers);
+
+    assert.equal(result.pages, 2);
+    assert.equal(result.hasMore, false, 'hasMore should be false when last page has no next link');
+    assert.deepEqual(result.items, ['P1', 'P2']);
+  });
+
+  it('hasMore is true when maxPages reached and next page exists', async () => {
+    // 3 pages exist, maxPages=2. After visiting 2 pages, a next link exists.
+    let pageIndex = 0;
+    const pageData = [
+      { items: ['P1'], nextHref: 'https://example.com/p2' },
+      { items: ['P2'], nextHref: 'https://example.com/p3' },
+      { items: ['P3'], nextHref: null },
+    ];
+
+    let currentUrl = 'https://example.com/data';
+    const page = {
+      url: () => currentUrl,
+      goto: async (url) => { currentUrl = url; pageIndex++; },
+      $$eval: async (selector) => {
+        const data = pageData[pageIndex];
+        if (!data || selector !== '.r') return [];
+        return data.items;
+      },
+      locator: (selector) => {
+        const data = pageData[pageIndex];
+        if (!data) {
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+        }
+        if (selector.includes('rel="next"')) {
+          if (data.nextHref) {
+            const el = { count: async () => 1, first: () => el, isVisible: async () => true, evaluate: async () => 'a', getAttribute: async (a) => a === 'href' ? data.nextHref : null, click: async () => {} };
+            return { count: async () => 1, first: () => el };
+          }
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null }) };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+      },
+      getByRole: () => ({ count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    };
+
+    const result = await macros['paginate'](page, [], {
+      selector: '.r',
+      maxPages: '2',
+    }, stubHelpers);
+
+    assert.equal(result.pages, 2);
+    assert.equal(result.hasMore, true, 'hasMore should be true when next page exists beyond limit');
+    assert.deepEqual(result.items, ['P1', 'P2']);
+  });
+
+  it('hasMore is false on a single page with no pagination', async () => {
+    const page = createMockPage({
+      url: 'https://example.com/single',
+      items: { '.item': ['Only item'] },
+    });
+
+    const result = await macros['paginate'](page, [], { selector: '.item' }, stubHelpers);
+
+    assert.equal(result.pages, 1);
+    assert.equal(result.hasMore, false);
+    assert.deepEqual(result.items, ['Only item']);
   });
 });

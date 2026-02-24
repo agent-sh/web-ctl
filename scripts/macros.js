@@ -435,6 +435,52 @@ async function login(page, actionArgs, opts, helpers) {
 }
 
 /**
+ * Validate that a URL is safe for navigation (http/https only).
+ * Prevents open-redirect attacks via javascript:, data:, or file: hrefs.
+ *
+ * @param {string} href - The href to validate
+ * @param {string} currentUrl - The current page URL (used as base for relative URLs)
+ * @returns {boolean}
+ */
+function isValidNavigationUrl(href, currentUrl) {
+  try {
+    const url = new URL(href, currentUrl);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Navigate to a pagination target - shared between nextPage and paginate.
+ * Prefers goto for clean navigation when href is a valid http(s) URL on
+ * an anchor element; falls back to clicking the element otherwise.
+ *
+ * @param {object} page - Playwright page
+ * @param {object} paginationResult - { element, href, method } from detectPaginationLink
+ * @param {object} helpers - macro helpers (waitForStable required)
+ */
+async function navigateToPage(page, paginationResult, helpers) {
+  const { element, href, method } = paginationResult;
+  if (href && isValidNavigationUrl(href, page.url())) {
+    if (method === 'rel-next-link' || method === 'rel-next-a') {
+      await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 10000 });
+    } else {
+      // For other methods, check if it is an <a> tag
+      const tagName = await element.evaluate(el => el.tagName.toLowerCase()).catch(() => 'unknown');
+      if (tagName === 'a') {
+        await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      } else {
+        await element.click({ timeout: 10000 });
+      }
+    }
+  } else {
+    await element.click({ timeout: 10000 });
+  }
+  await helpers.waitForStable(page, { timeout: 10000 });
+}
+
+/**
  * Detect a pagination link or button on the page.
  * Tries multiple heuristics in priority order:
  *   1. rel="next" links
@@ -528,23 +574,7 @@ async function nextPage(page, actionArgs, opts, helpers) {
   }
 
   const previousUrl = page.url();
-
-  // Prefer goto for clean navigation when href is available on a link
-  if (result.href && result.method !== 'role-text') {
-    await page.goto(result.href, { waitUntil: 'domcontentloaded', timeout: 10000 });
-  } else if (result.href && result.element) {
-    // For role-text links with href, try goto first
-    const tagName = await result.element.evaluate(el => el.tagName.toLowerCase()).catch(() => '');
-    if (tagName === 'a') {
-      await page.goto(result.href, { waitUntil: 'domcontentloaded', timeout: 10000 });
-    } else {
-      await result.element.click({ timeout: 10000 });
-    }
-  } else {
-    await result.element.click({ timeout: 10000 });
-  }
-
-  await helpers.waitForStable(page, { timeout: 10000 });
+  await navigateToPage(page, result, helpers);
   const snapshot = await helpers.getSnapshot(page);
   return { url: page.url(), previousUrl, nextPageDetected: result.method, snapshot };
 }
@@ -563,6 +593,7 @@ async function paginate(page, actionArgs, opts, helpers) {
 
   const maxPages = Math.min(Math.max(parseInt(opts.maxPages, 10) || 5, 1), 20);
   const maxItems = Math.min(Math.max(parseInt(opts.maxItems, 10) || 100, 1), 500);
+  const PER_PAGE_CAP = 1000;
 
   const startUrl = page.url();
   const allItems = [];
@@ -572,48 +603,43 @@ async function paginate(page, actionArgs, opts, helpers) {
   for (let i = 0; i < maxPages; i++) {
     pagesVisited++;
 
-    // Extract items from current page
-    const elements = await page.locator(opts.selector).all();
-    for (const el of elements) {
-      const text = (await el.textContent() || '').trim();
-      if (text) {
-        allItems.push(text);
-      }
+    // Extract items from current page via single page function call
+    // instead of N+1 async textContent() queries per element.
+    let texts = await page.$$eval(opts.selector, els =>
+      els.map(el => (el.textContent || '').trim()).filter(Boolean)
+    );
+
+    // Bound per-page results to prevent memory exhaustion
+    if (texts.length > PER_PAGE_CAP) {
+      texts = texts.slice(0, PER_PAGE_CAP);
     }
 
-    // Check item limit
-    if (allItems.length >= maxItems) {
-      allItems.length = maxItems;
+    // Respect maxItems: only take what we still need
+    const remaining = maxItems - allItems.length;
+    if (texts.length > remaining) {
+      allItems.push(...texts.slice(0, remaining));
       hasMore = true;
       break;
     }
+    allItems.push(...texts);
 
-    // Detect next page
+    // Detect next page BEFORE checking page limit - this lets us accurately
+    // report hasMore based on whether a next page actually exists.
     const next = await detectPaginationLink(page, 'next');
     if (!next) {
+      // No more pages available
       break;
     }
 
-    // If this is the last allowed page, mark hasMore and stop
-    if (pagesVisited === maxPages) {
+    // A next page exists. If we have hit the page limit, report hasMore and stop.
+    if (pagesVisited >= maxPages) {
       hasMore = true;
       break;
     }
 
-    // Navigate to next page
-    if (next.href && next.element) {
-      const tagName = await next.element.evaluate(el => el.tagName.toLowerCase()).catch(() => '');
-      if (tagName === 'a' || next.method === 'rel-next-link') {
-        await page.goto(next.href, { waitUntil: 'domcontentloaded', timeout: 10000 });
-      } else {
-        await next.element.click({ timeout: 10000 });
-      }
-    } else if (next.element) {
-      await next.element.click({ timeout: 10000 });
-    }
-
+    // Navigate to next page using shared helper (validates URL protocol)
     await helpers.randomDelay();
-    await helpers.waitForStable(page, { timeout: 10000 });
+    await navigateToPage(page, next, helpers);
   }
 
   const snapshot = await helpers.getSnapshot(page);
