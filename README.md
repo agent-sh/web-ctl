@@ -175,6 +175,7 @@ This eliminates the common click-snapshot-check loop that wastes agent turns on 
 | `--snapshot-depth <N>` | Any action with snapshot | Limit ARIA tree depth (e.g. 3 for top 3 levels) |
 | `--snapshot-selector <sel>` | Any action with snapshot | Scope snapshot to a DOM subtree |
 | `--snapshot-max-lines <N>` | Any action with snapshot | Truncate snapshot to N lines |
+| `--snapshot-compact` | Any action with snapshot | Compact format: collapse links, inline headings, remove decorative images, dedup URLs |
 | `--snapshot-collapse` | Any action with snapshot | Collapse repeated siblings (keep first 2, summarize rest) |
 | `--snapshot-text-only` | Any action with snapshot | Strip structural nodes, keep content only |
 | `--max-field-length <N>` | `extract` | Max characters per field (default: 500, max: 2000) |

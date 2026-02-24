@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- `--snapshot-compact` flag for token-efficient LLM consumption - applies four transforms: link collapsing (merges link + /url child into `link "Title" -> /path`), heading inlining (merges heading with single link child), decorative image removal (strips img nodes with empty or single-char alt text), and duplicate URL dedup (removes second occurrence at same depth scope). Applied after `--snapshot-depth` and before `--snapshot-collapse` in the pipeline
 - `--snapshot-max-lines <N>` flag to truncate snapshot output to a maximum number of lines, with a `... (K more lines)` marker when lines are omitted
 - `--snapshot-collapse` flag to collapse repeated consecutive siblings of the same ARIA type - keeps first 2 with subtrees, replaces the rest with `... (K more <type>)` markers. Works recursively on nested structures
 - `--snapshot-text-only` flag to strip structural container nodes (list, listitem, group, region, main, form, table, row, grid, generic, etc.) and keep only content-bearing nodes. Labeled structural nodes are preserved. Indentation is re-compressed

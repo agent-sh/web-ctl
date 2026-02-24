@@ -384,6 +384,22 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> --snapshot-max-l
 
 Hard-caps the snapshot output to N lines. A marker like `... (42 more lines)` is appended when lines are omitted. Applied after all other snapshot transforms, so it acts as a final safety net. Max value: 10000.
 
+### --snapshot-compact - Token-Efficient Compact Format
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-compact
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> --snapshot-compact
+```
+
+Applies four token-saving transforms in sequence:
+
+1. **Link collapsing** - Merges `link "Title":` with its `/url: /path` child into `link "Title" -> /path`
+2. **Heading inlining** - Merges `heading "Title" [level=N]:` with a single link child into `heading [hN] "Title" -> /path`
+3. **Decorative image removal** - Strips `img` nodes with empty or single-character alt text (decorative icons, spacers)
+4. **Duplicate URL dedup** - Removes the second occurrence of the same URL within the same depth scope
+
+Combines well with `--snapshot-collapse` and `--snapshot-text-only` for maximum reduction. Applied after `--snapshot-depth` and before `--snapshot-collapse` in the pipeline.
+
 ### --snapshot-collapse - Collapse Repeated Siblings
 
 ```bash
