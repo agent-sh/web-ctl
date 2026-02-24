@@ -3,6 +3,9 @@
 ## [Unreleased]
 
 ### Added
+- `--snapshot-max-lines <N>` flag to truncate snapshot output to a maximum number of lines, with a `... (K more lines)` marker when lines are omitted
+- `--snapshot-collapse` flag to collapse repeated consecutive siblings of the same ARIA type - keeps first 2 with subtrees, replaces the rest with `... (K more <type>)` markers. Works recursively on nested structures
+- `--snapshot-text-only` flag to strip structural container nodes (list, listitem, group, region, main, form, table, row, grid, generic, etc.) and keep only content-bearing nodes. Labeled structural nodes are preserved. Indentation is re-compressed
 - `extract` macro for structured data extraction from repeated list items with two modes: selector mode (`--selector <sel> --fields f1,f2,...`) for targeted extraction and auto-detect mode (`--auto`) that finds repeated patterns automatically using structural signature matching. Auto-detect is table-aware - when a table with `<th>` headers is detected, returns per-column data (e.g., `{ Service: "Runtime", Description: "..." }`) instead of a single concatenated `text` field
 - Auto-create sessions on first `run` command - sessions are created automatically if they don't exist, eliminating the need for explicit `session start` before browsing. Response includes `autoCreated: true` flag when a session was auto-created.
 - `next-page` macro to auto-detect and follow pagination links using multiple heuristics (rel="next", ARIA roles, CSS patterns, page numbers)

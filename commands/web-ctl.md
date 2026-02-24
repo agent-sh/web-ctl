@@ -58,6 +58,9 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> screenshot
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-depth 3
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> --snapshot-selector "css=nav"
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click <sel> --no-snapshot
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-collapse
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-text-only --snapshot-max-lines 50
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> --snapshot-collapse --snapshot-depth 4
 
 # Macros
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> select-option <sel> <text>
