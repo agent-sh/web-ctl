@@ -18,7 +18,7 @@ const ALLOWED_SCHEMES = /^https?:\/\//i;
 
 const BOOLEAN_FLAGS = new Set([
   '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
-  '--exact', '--accept', '--submit', '--dismiss',
+  '--exact', '--accept', '--submit', '--dismiss', '--auto',
 ]);
 
 function validateSessionName(name) {
