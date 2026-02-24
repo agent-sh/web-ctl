@@ -695,3 +695,63 @@ describe('auto-create session CLI integration', () => {
       'response should not include autoCreated when session already exists');
   });
 });
+
+describe('auth wall detection in goto', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const webCtlSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+    'utf8'
+  );
+
+  it('web-ctl.js imports auth-wall-detect module', () => {
+    assert.ok(
+      webCtlSource.includes("require('./auth-wall-detect')"),
+      'web-ctl.js should require auth-wall-detect'
+    );
+  });
+
+  it('BOOLEAN_FLAGS includes --no-auth-wall-detect', () => {
+    assert.ok(
+      webCtlSource.includes("'--no-auth-wall-detect'"),
+      '--no-auth-wall-detect should be in BOOLEAN_FLAGS'
+    );
+  });
+
+  it('auth-wall-detect.js exports detectAuthWall as function', () => {
+    const { detectAuthWall } = require('../scripts/auth-wall-detect');
+    assert.equal(typeof detectAuthWall, 'function');
+  });
+
+  it('goto case calls detectAuthWall', () => {
+    assert.ok(
+      webCtlSource.includes('detectAuthWall(page, context, url)'),
+      'goto case should call detectAuthWall'
+    );
+  });
+
+  it('goto case checks noAuthWallDetect opt-out', () => {
+    assert.ok(
+      webCtlSource.includes('opts.noAuthWallDetect'),
+      'goto case should check noAuthWallDetect flag'
+    );
+  });
+
+  it('goto case relaunches headed browser on detection', () => {
+    assert.ok(
+      webCtlSource.includes('canLaunchHeaded()'),
+      'goto case should call canLaunchHeaded on auth wall detection'
+    );
+    assert.ok(
+      webCtlSource.includes("launchBrowser(sessionName, { headless: false })"),
+      'goto case should relaunch browser headed'
+    );
+  });
+
+  it('goto case includes authWallDetected in result', () => {
+    assert.ok(
+      webCtlSource.includes('authWallDetected: true'),
+      'result should include authWallDetected flag'
+    );
+  });
+});

@@ -94,7 +94,7 @@ web-ctl session end github
 
 | Action | Usage | Returns |
 |--------|-------|---------|
-| `goto` | `run <s> goto <url>` | `{ url, status, snapshot }` |
+| `goto` | `run <s> goto <url> [--no-auth-wall-detect]` | `{ url, status, authWallDetected, checkpointCompleted, snapshot }` |
 | `snapshot` | `run <s> snapshot` | `{ url, snapshot }` |
 | `click` | `run <s> click <sel> [--wait-stable]` | `{ url, clicked, snapshot }` |
 | `click-wait` | `run <s> click-wait <sel> [--timeout]` | `{ url, clicked, settled, snapshot }` |
@@ -172,6 +172,7 @@ This eliminates the common click-snapshot-check loop that wastes agent turns on 
 | `--filter <pattern>` | `network` | Filter captured requests by URL pattern |
 | `--path <file>` | `screenshot` | Custom screenshot path (within session dir) |
 | `--allow-evaluate` | `evaluate` | Required safety flag for JS execution |
+| `--no-auth-wall-detect` | `goto` | Disable automatic auth wall detection and checkpoint opening |
 | `--snapshot-depth <N>` | Any action with snapshot | Limit ARIA tree depth (e.g. 3 for top 3 levels) |
 | `--snapshot-selector <sel>` | Any action with snapshot | Scope snapshot to a DOM subtree |
 | `--snapshot-max-lines <N>` | Any action with snapshot | Truncate snapshot to N lines |

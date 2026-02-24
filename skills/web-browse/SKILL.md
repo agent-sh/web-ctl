@@ -46,10 +46,19 @@ Safe practice: always double-quote URL arguments.
 ### goto - Navigate to URL
 
 ```bash
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> [--no-auth-wall-detect]
 ```
 
-Returns: `{ url, status, snapshot }`
+Navigates to a URL and automatically detects authentication walls using a three-heuristic detection system:
+1. Domain cookies (checks for auth-related cookie names on the target domain)
+2. URL auth patterns (detects common login URL patterns like `/login`, `/signin`, `/auth`)
+3. DOM login elements (scans the page for login forms and auth UI elements)
+
+When an authentication wall is detected, the tool automatically opens a headed checkpoint, allowing the user to complete authentication. The checkpoint times out after 120 seconds by default.
+
+Use `--no-auth-wall-detect` to disable this automatic detection and skip the checkpoint, navigating headlessly without waiting for user interaction.
+
+Returns: `{ url, status, authWallDetected, checkpointCompleted, snapshot }`
 
 ### snapshot - Get Accessibility Tree
 
