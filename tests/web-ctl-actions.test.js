@@ -523,6 +523,10 @@ describe('snapshot options in web-ctl source', () => {
   it('detectMainContent function exists', () => {
     assert.ok(webCtlSource.includes('async function detectMainContent(page)'), 'detectMainContent should be defined');
   });
+
+  it('detectMainContent handles complementary regions', () => {
+    assert.ok(webCtlSource.includes('complementary'), 'detectMainContent should handle complementary regions');
+  });
 });
 
 describe('web-ctl navigation state persistence', () => {
