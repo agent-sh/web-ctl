@@ -509,7 +509,6 @@ describe('auto-create session CLI integration', () => {
 
   it('auto-creates session on run command instead of session_not_found', () => {
     const result = runCliSafe('run', 'newsession', 'goto', 'https://example.com');
-    // The action will fail (no playwright), but it must NOT be session_not_found
     assert.notEqual(result.error, 'session_not_found',
       'run should auto-create session, not return session_not_found');
   });

@@ -428,7 +428,6 @@ async function runAction(sessionName, action, actionArgs, opts) {
       session = sessionStore.createSession(sessionName);
       autoCreated = true;
     } catch {
-      // Race condition: another process created it between get and create
       session = sessionStore.getSession(sessionName);
       if (!session) {
         output({ ok: false, command: `run ${action}`, session: sessionName, error: 'session_not_found', message: `Session "${sessionName}" not found` });
