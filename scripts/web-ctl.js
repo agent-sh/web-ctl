@@ -19,6 +19,7 @@ const ALLOWED_SCHEMES = /^https?:\/\//i;
 const BOOLEAN_FLAGS = new Set([
   '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
+  '--snapshot-collapse', '--snapshot-text-only',
 ]);
 
 function validateSessionName(name) {
@@ -93,6 +94,9 @@ function resolveSelector(page, selector) {
  * @param {boolean} [opts.noSnapshot] - Return null to omit snapshot entirely
  * @param {string} [opts.snapshotSelector] - Scope snapshot to a DOM subtree
  * @param {number} [opts.snapshotDepth] - Limit ARIA tree depth
+ * @param {boolean} [opts.snapshotCollapse] - Collapse repeated siblings
+ * @param {boolean} [opts.snapshotTextOnly] - Strip structural nodes, keep content
+ * @param {number} [opts.snapshotMaxLines] - Truncate to N lines
  */
 async function getSnapshot(page, opts = {}) {
   if (opts.noSnapshot) return null;
@@ -101,7 +105,12 @@ async function getSnapshot(page, opts = {}) {
       ? resolveSelector(page, opts.snapshotSelector)
       : page.locator('body');
     const raw = await root.ariaSnapshot();
-    return opts.snapshotDepth ? trimByDepth(raw, opts.snapshotDepth) : raw;
+    let result = raw;
+    if (opts.snapshotDepth) result = trimByDepth(result, opts.snapshotDepth);
+    if (opts.snapshotCollapse) result = collapseRepeated(result);
+    if (opts.snapshotTextOnly) result = textOnly(result);
+    if (opts.snapshotMaxLines) result = trimByLines(result, opts.snapshotMaxLines);
+    return result;
   } catch (e) {
     const msg = e?.message ?? String(e);
     console.warn('[WARN] ariaSnapshot failed:', msg);
@@ -141,6 +150,170 @@ function trimByDepth(snapshot, maxDepth) {
       prevCut = true;
     }
     // else: consecutive cut lines, skip (no duplicate markers)
+  }
+
+  return result.join('\n');
+}
+
+/**
+ * Truncate snapshot output to a maximum number of lines.
+ * Appends a marker indicating how many lines were omitted.
+ *
+ * @param {string} snapshot - ARIA snapshot text
+ * @param {number} maxLines - Maximum number of lines to keep
+ * @returns {string} Truncated snapshot
+ */
+function trimByLines(snapshot, maxLines) {
+  if (maxLines == null) return snapshot;
+  if (typeof snapshot === 'string' && snapshot.startsWith('(')) return snapshot;
+
+  const lines = snapshot.split('\n');
+  if (lines.length <= maxLines) return snapshot;
+  const kept = lines.slice(0, maxLines);
+  kept.push(`... (${lines.length - maxLines} more lines)`);
+  return kept.join('\n');
+}
+
+/**
+ * Collapse consecutive siblings of the same ARIA type at the same depth.
+ * Keeps the first 2 siblings with their full subtrees; collapses the rest
+ * into a single "... (K more <type>)" marker.
+ *
+ * @param {string} snapshot - ARIA snapshot text
+ * @returns {string} Collapsed snapshot
+ */
+function collapseRepeated(snapshot) {
+  if (snapshot == null) return snapshot;
+  if (typeof snapshot === 'string' && snapshot.startsWith('(')) return snapshot;
+
+  const lines = snapshot.split('\n');
+  const result = [];
+
+  // Parse each line into { depth, type, raw }
+  const parsed = lines.map(line => {
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
+    const depth = Math.floor(spaces / 2);
+    const content = line.slice(spaces);
+    // Extract type: first word after "- "
+    const typeMatch = content.match(/^- (\S+)/);
+    const type = typeMatch ? typeMatch[1] : null;
+    return { depth, type, raw: line };
+  });
+
+  let i = 0;
+  while (i < parsed.length) {
+    const current = parsed[i];
+
+    // Find a sibling group: consecutive entries at the same depth with the same type
+    if (current.type) {
+      // Collect all siblings of this type at this depth
+      const siblings = [];
+      let j = i;
+      while (j < parsed.length) {
+        const entry = parsed[j];
+        if (j === i || (entry.depth === current.depth && entry.type === current.type)) {
+          // This is a sibling - collect it and its children
+          const siblingStart = j;
+          j++;
+          // Gather children (deeper lines)
+          while (j < parsed.length && parsed[j].depth > current.depth) {
+            j++;
+          }
+          siblings.push({ start: siblingStart, end: j });
+        } else {
+          break;
+        }
+      }
+
+      if (siblings.length > 2) {
+        // Keep first 2 siblings with subtrees
+        for (let s = 0; s < 2; s++) {
+          for (let k = siblings[s].start; k < siblings[s].end; k++) {
+            result.push(parsed[k].raw);
+          }
+        }
+        // Insert collapse marker
+        const collapsed = siblings.length - 2;
+        const indent = ' '.repeat(current.depth * 2);
+        result.push(`${indent}- ... (${collapsed} more ${current.type})`);
+        i = j;
+      } else {
+        // 2 or fewer siblings - output all lines as-is
+        for (let s = 0; s < siblings.length; s++) {
+          for (let k = siblings[s].start; k < siblings[s].end; k++) {
+            result.push(parsed[k].raw);
+          }
+        }
+        i = j;
+      }
+    } else {
+      result.push(current.raw);
+      i++;
+    }
+  }
+
+  return result.join('\n');
+}
+
+/**
+ * Strip structural/container nodes from a snapshot, keeping only content-bearing nodes.
+ * Structural nodes without a quoted label are removed; nodes with labels are kept.
+ * Indentation is compressed to close gaps left by removed nodes.
+ *
+ * @param {string} snapshot - ARIA snapshot text
+ * @returns {string} Content-only snapshot
+ */
+function textOnly(snapshot) {
+  if (snapshot == null) return snapshot;
+  if (typeof snapshot === 'string' && snapshot.startsWith('(')) return snapshot;
+
+  const STRUCTURAL_TYPES = new Set([
+    'list', 'listitem', 'group', 'region', 'main', 'complementary',
+    'contentinfo', 'banner', 'form', 'table', 'row', 'grid',
+    'generic', 'none', 'presentation', 'separator', 'directory'
+  ]);
+
+  const lines = snapshot.split('\n');
+  const kept = [];
+
+  for (const line of lines) {
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
+    const content = line.slice(spaces);
+    const typeMatch = content.match(/^- (\S+)/);
+    const type = typeMatch ? typeMatch[1] : null;
+    const hasLabel = /"[^"]*"/.test(content);
+
+    if (!type || !STRUCTURAL_TYPES.has(type) || hasLabel) {
+      kept.push({ depth: Math.floor(spaces / 2), raw: line, content });
+    }
+  }
+
+  // Re-indent: compress gaps by tracking a depth stack
+  // For each kept line, find its effective depth relative to its nearest kept ancestor
+  if (kept.length === 0) return '';
+
+  const result = [];
+  // depthMap[originalDepth] = outputDepth
+  const depthStack = []; // stack of { originalDepth, outputDepth }
+
+  for (const entry of kept) {
+    // Pop stack entries that are not ancestors (>= current depth)
+    while (depthStack.length > 0 && depthStack[depthStack.length - 1].originalDepth >= entry.depth) {
+      depthStack.pop();
+    }
+
+    let outputDepth;
+    if (depthStack.length === 0) {
+      outputDepth = 0;
+    } else {
+      outputDepth = depthStack[depthStack.length - 1].outputDepth + 1;
+    }
+
+    depthStack.push({ originalDepth: entry.depth, outputDepth });
+    const indent = ' '.repeat(outputDepth * 2);
+    result.push(`${indent}${entry.content}`);
   }
 
   return result.join('\n');
@@ -453,6 +626,14 @@ async function runAction(sessionName, action, actionArgs, opts) {
     }
     opts.snapshotDepth = depth;
   }
+  if (opts.snapshotMaxLines != null) {
+    const maxLines = parseInt(opts.snapshotMaxLines, 10);
+    if (isNaN(maxLines) || maxLines <= 0 || maxLines > 10000) {
+      output({ ok: false, command: `run ${action}`, session: sessionName, error: 'invalid_option', message: '--snapshot-max-lines must be a positive integer (max 10000)' });
+      return;
+    }
+    opts.snapshotMaxLines = maxLines;
+  }
   if (opts.snapshotSelector != null && (typeof opts.snapshotSelector !== 'string' || opts.snapshotSelector.length === 0 || opts.snapshotSelector === 'true')) {
     output({ ok: false, command: `run ${action}`, session: sessionName, error: 'invalid_option', message: '--snapshot-selector requires a non-empty selector value' });
     return;
@@ -760,6 +941,9 @@ Snapshot options (apply to any action that returns a snapshot):
   --snapshot-depth <N>          Limit ARIA tree depth (e.g. 3 for top 3 levels)
   --snapshot-selector <sel>     Scope snapshot to a DOM subtree
   --no-snapshot                 Omit snapshot from output entirely
+  --snapshot-max-lines <N>      Truncate snapshot to N lines
+  --snapshot-collapse           Collapse repeated siblings (show first 2)
+  --snapshot-text-only          Strip structural nodes, keep content only
 
 Selector syntax:
   role=button[name='Submit']    ARIA role selector
@@ -780,6 +964,8 @@ Examples:
   web-ctl run github snapshot --snapshot-depth 3
   web-ctl run github goto https://github.com --snapshot-selector "css=nav"
   web-ctl run github click "#btn" --no-snapshot
+  web-ctl run github snapshot --snapshot-collapse
+  web-ctl run github snapshot --snapshot-text-only --snapshot-max-lines 50
   web-ctl session end github`);
 }
 
