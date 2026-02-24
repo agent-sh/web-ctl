@@ -108,7 +108,6 @@ async function detectAuthWall(page, context, targetUrl) {
         break;
       }
     } catch {
-      // Selector query failed - continue to next
     }
   }
 
@@ -130,7 +129,6 @@ async function detectAuthWall(page, context, targetUrl) {
     const bodyText = (await page.textContent('body') || '').toLowerCase();
     matchedText = AUTH_TEXT_PATTERNS.find(pattern => bodyText.includes(pattern));
   } catch {
-    // textContent failed - no text match
   }
 
   if (matchedText) {

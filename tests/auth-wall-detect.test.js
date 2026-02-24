@@ -161,7 +161,6 @@ describe('detectAuthWall', () => {
     };
     const context = mockContext({ cookies: [{ domain: '.example.com', name: 's', value: 'v' }] });
     const result = await detectAuthWall(page, context, 'https://example.com/app');
-    // Should still detect via text pattern after selector errors
     assert.equal(result.detected, true);
     assert.equal(result.details.domElement, 'sign in');
   });
