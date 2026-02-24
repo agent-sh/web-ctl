@@ -421,10 +421,22 @@ function classifyError(err, { action, selector, snapshot } = {}) {
 // ============ Run Commands ============
 
 async function runAction(sessionName, action, actionArgs, opts) {
-  const session = sessionStore.getSession(sessionName);
+  let session = sessionStore.getSession(sessionName);
+  let autoCreated = false;
   if (!session) {
-    output({ ok: false, command: `run ${action}`, session: sessionName, error: 'session_not_found', message: `Session "${sessionName}" not found` });
-    return;
+    try {
+      session = sessionStore.createSession(sessionName);
+      autoCreated = true;
+    } catch (err) {
+      if (err.message && err.message.includes('already exists')) {
+        session = sessionStore.getSession(sessionName);
+      }
+      if (!session) {
+        const isRace = err.message && err.message.includes('already exists');
+        output({ ok: false, command: `run ${action}`, session: sessionName, error: isRace ? 'session_not_found' : 'session_create_failed', message: isRace ? `Session "${sessionName}" not found` : err.message });
+        return;
+      }
+    }
   }
 
   if (session.status === 'expired') {
@@ -640,7 +652,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
 
     await closeBrowser(sessionName, context);
     sessionStore.unlockSession(sessionName);
-    output({ ok: true, command: `run ${action}`, session: sessionName, result });
+    output({ ok: true, command: `run ${action}`, session: sessionName, ...(autoCreated && { autoCreated: true }), result });
 
   } catch (err) {
     let snapshot = null;
@@ -663,6 +675,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
       ok: false,
       command: `run ${action}`,
       session: sessionName,
+      ...(autoCreated && { autoCreated: true }),
       ...classified,
       ...(snapshot != null && { snapshot })
     });

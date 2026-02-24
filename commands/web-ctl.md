@@ -18,8 +18,8 @@ Parse the user's request and route appropriately:
 
 For single-step requests like "go to example.com" or "take a screenshot":
 
-1. Ensure a session exists (create one with a sensible name if not)
-2. Invoke the **web-browse** skill with the appropriate action
+1. Invoke the **web-browse** skill with session name and action
+2. Sessions auto-create on first run command if they don't exist
 
 ### Auth Requests
 
