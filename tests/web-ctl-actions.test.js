@@ -844,6 +844,29 @@ describe('--ensure-auth flag', () => {
       'poll interval should be 2000ms'
     );
   });
+
+  it('checks page.isClosed() before polling', () => {
+    const ensureAuthIdx = webCtlSource.indexOf('if (opts.ensureAuth)');
+    const isClosedIdx = webCtlSource.indexOf('page.isClosed()', ensureAuthIdx);
+    assert.ok(isClosedIdx > ensureAuthIdx, 'should check page.isClosed() in polling loop');
+  });
+
+  it('wraps checkAuthSuccess in try-catch during polling', () => {
+    const ensureAuthIdx = webCtlSource.indexOf('if (opts.ensureAuth)');
+    const nextCheckpoint = webCtlSource.indexOf('} else {', ensureAuthIdx + 200);
+    const pollBlock = webCtlSource.slice(ensureAuthIdx, nextCheckpoint);
+    assert.ok(
+      pollBlock.includes('try {') && pollBlock.includes('checkAuthSuccess'),
+      'checkAuthSuccess should be wrapped in try-catch within polling loop'
+    );
+  });
+
+  it('guards closeBrowser with context null check on normal exit', () => {
+    assert.ok(
+      webCtlSource.includes('if (context) await closeBrowser(sessionName, context)'),
+      'normal exit should guard closeBrowser with context null check'
+    );
+  });
 });
 
 describe('--ensure-auth flag parsing', () => {

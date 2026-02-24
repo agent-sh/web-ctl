@@ -969,31 +969,32 @@ async function runAction(sessionName, action, actionArgs, opts) {
                 const startTime = Date.now();
                 let authCompleted = false;
                 while (Date.now() - startTime < ckTimeout) {
-                  const authResult = await checkAuthSuccess(page, context, url, { loginUrl: url });
-                  if (authResult.success) {
-                    authCompleted = true;
-                    break;
-                  }
                   await new Promise(resolve => setTimeout(resolve, pollInterval));
+                  if (page.isClosed()) break;
+                  try {
+                    const authResult = await checkAuthSuccess(page, context, url, { loginUrl: url });
+                    if (authResult.success) {
+                      authCompleted = true;
+                      break;
+                    }
+                  } catch { /* page may have navigated - retry next poll */ }
                 }
                 if (authCompleted) {
-                  const originalUrl = url;
                   await closeBrowser(sessionName, context);
                   const headlessBrowser = await launchBrowser(sessionName, { headless: true });
                   context = headlessBrowser.context;
                   page = headlessBrowser.page;
-                  await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
                   const snapshot = await getSnapshot(page, opts);
                   result = { url: page.url(), authWallDetected: true, ensureAuthCompleted: true,
                              ...(snapshot != null && { snapshot }) };
                   break;
                 } else {
                   await closeBrowser(sessionName, context);
-                  const headlessBrowser = await launchBrowser(sessionName, { headless: true });
-                  context = headlessBrowser.context;
-                  page = headlessBrowser.page;
-                  result = { url: page.url(), authWallDetected: true, ensureAuthCompleted: false,
+                  result = { url, authWallDetected: true, ensureAuthCompleted: false,
                              message: 'Auth did not complete within timeout' };
+                  context = null;
+                  page = null;
                   break;
                 }
               } else {
@@ -1178,7 +1179,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
       }
     } catch { /* ignore - page may have closed before URL read */ }
 
-    await closeBrowser(sessionName, context);
+    if (context) await closeBrowser(sessionName, context);
     sessionStore.unlockSession(sessionName);
     output({ ok: true, command: `run ${action}`, session: sessionName, ...(autoCreated && { autoCreated: true }), result });
 
