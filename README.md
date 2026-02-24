@@ -180,7 +180,7 @@ This eliminates the common click-snapshot-check loop that wastes agent turns on 
 | `--snapshot-collapse` | Any action with snapshot | Collapse repeated siblings (keep first 2, summarize rest) |
 | `--snapshot-text-only` | Any action with snapshot | Strip structural nodes, keep content only |
 | `--max-field-length <N>` | `extract` | Max characters per field (default: 500, max: 2000) |
-| `--snapshot-full` | Any action with snapshot | Use full page body (default: auto-scope to `<main>` content area) |
+| `--snapshot-full` | Any action with snapshot | Use full page body (default: auto-scope to `<main>` and complementary landmarks) |
 | `--no-snapshot` | Any action with snapshot | Omit snapshot from output entirely |
 
 ## Error Handling
