@@ -1167,6 +1167,8 @@ Snapshot options (apply to any action that returns a snapshot):
   --snapshot-selector <sel>     Scope snapshot to a DOM subtree
   --no-snapshot                 Omit snapshot from output entirely
   --snapshot-max-lines <N>      Truncate snapshot to N lines
+  --snapshot-compact            Compact format: collapse links, inline headings,
+                                  remove decorative images, dedup URLs
   --snapshot-collapse           Collapse repeated siblings (show first 2)
   --snapshot-text-only          Strip structural nodes, keep content only
 
@@ -1190,6 +1192,7 @@ Examples:
   web-ctl run github goto "https://github.com" --snapshot-selector "css=nav"
   web-ctl run github click "#btn" --no-snapshot
   web-ctl run github snapshot --snapshot-collapse
+  web-ctl run github snapshot --snapshot-compact
   web-ctl run github snapshot --snapshot-text-only --snapshot-max-lines 50
   web-ctl session end github`);
 }
