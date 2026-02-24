@@ -824,6 +824,69 @@ async function extract(page, actionArgs, opts, helpers) {
       return false;
     }
 
+    function isTableGroup(group) {
+      if (group.tag !== 'TR') return false;
+      var parentTag = group.parent.tagName;
+      return parentTag === 'TBODY' || parentTag === 'THEAD' || parentTag === 'TABLE';
+    }
+
+    function getTableHeaders(group) {
+      var tableEl = group.parent;
+      var depth = 0;
+      while (tableEl && tableEl.tagName !== 'TABLE' && depth++ < 10) {
+        tableEl = tableEl.parentElement;
+      }
+      if (!tableEl || tableEl.tagName !== 'TABLE') return null;
+
+      var headers = [];
+      var headerRow = null;
+
+      var thead = null;
+      var tableChildren = tableEl.children;
+      for (var tc = 0; tc < tableChildren.length; tc++) {
+        if (tableChildren[tc].tagName === 'THEAD') { thead = tableChildren[tc]; break; }
+      }
+      if (thead) {
+        var firstTR = thead.children[0];
+        if (firstTR && firstTR.tagName === 'TR') {
+          var ths = firstTR.children;
+          for (var i = 0; i < ths.length; i++) {
+            if (ths[i].tagName !== 'TH') continue;
+            var colspan = ths[i].getAttribute('colspan');
+            if (colspan && parseInt(colspan, 10) > 1) return null;
+            var text = (ths[i].textContent || '').trim();
+            headers.push(text || ('column_' + (i + 1)));
+          }
+          if (headers.length > 0) headerRow = firstTR;
+        }
+      }
+
+      // If no <thead> headers, check if first element in group has all <th> children
+      if (headers.length === 0) {
+        var firstEl = group.elements[0];
+        var children = firstEl.children;
+        var allTH = children.length > 0;
+        for (var j = 0; j < children.length; j++) {
+          if (children[j].tagName !== 'TH') {
+            allTH = false;
+            break;
+          }
+        }
+        if (allTH) {
+          for (var m = 0; m < children.length; m++) {
+            var cs = children[m].getAttribute('colspan');
+            if (cs && parseInt(cs, 10) > 1) return null;
+            var txt = (children[m].textContent || '').trim();
+            headers.push(txt || ('column_' + (m + 1)));
+          }
+          headerRow = firstEl;
+        }
+      }
+
+      if (headers.length === 0) return null;
+      return { headers: headers, headerRow: headerRow };
+    }
+
     // Walk all elements, group siblings by parent + tagName
     // Use a separate Map to track parent IDs (avoids mutating DOM nodes)
     var groups = {};
@@ -931,10 +994,44 @@ async function extract(page, actionArgs, opts, helpers) {
       return item;
     }
 
+    function extractTableRow(tr, headers) {
+      var item = {};
+      var cells = tr.children;
+      var hi = 0;
+      for (var i = 0; i < cells.length && hi < headers.length; i++) {
+        if (cells[i].tagName !== 'TD') continue;
+        var cellText = truncate((cells[i].textContent || '').trim());
+        if (cellText) {
+          item[headers[hi]] = cellText;
+        }
+        hi++;
+      }
+      var a = tr.querySelector('a[href]');
+      if (a) item.url = a.getAttribute('href');
+      return item;
+    }
+
+    var tableHeaders = null;
+    var headerRow = null;
+    if (isTableGroup(bestGroup)) {
+      var th = getTableHeaders(bestGroup);
+      if (th) {
+        tableHeaders = th.headers;
+        headerRow = th.headerRow;
+      }
+    }
+
     var items = [];
     var els = bestGroup.elements;
     for (var e = 0; e < els.length && items.length < cap; e++) {
-      var item = extractItem(els[e]);
+      var item;
+      if (tableHeaders && els[e] !== headerRow) {
+        item = extractTableRow(els[e], tableHeaders);
+      } else if (!tableHeaders) {
+        item = extractItem(els[e]);
+      } else {
+        continue;
+      }
       if (Object.keys(item).length > 0) items.push(item);
     }
 

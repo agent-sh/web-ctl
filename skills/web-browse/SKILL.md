@@ -327,6 +327,8 @@ Returns: `{ url, mode, selector, fields, count, items, snapshot }`
 
 Auto-detect mode also returns the detected CSS selector, which can be reused with selector mode for subsequent pages.
 
+**Table-aware extraction**: When auto-detect identifies a table with `<th>` headers (in `<thead>` or first row), items include per-column data using header text as keys (e.g., `{ Service: "Runtime", Description: "..." }`). Empty headers are auto-numbered as `column_1`, `column_2`, etc. Falls back to generic field extraction (`title`, `url`, `text`) when no headers are found.
+
 ## Snapshot Control
 
 All actions that return a snapshot support these flags to control output size:

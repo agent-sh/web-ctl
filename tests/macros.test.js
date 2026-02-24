@@ -1564,3 +1564,110 @@ describe('extract auto-detect mode', () => {
     assert.equal(result.mode, 'auto');
   });
 });
+
+describe('extract auto-detect table mode', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s,
+  };
+
+  it('extracts per-column data when table has thead headers', async () => {
+    const page = {
+      url: () => 'https://example.com/services',
+      evaluate: async () => ({
+        items: [
+          { Service: 'CloudSync', Description: 'File syncing', Integrations: 'Dropbox, S3' },
+          { Service: 'AuthGuard', Description: 'OAuth proxy', Integrations: 'Google, GitHub' },
+          { Service: 'LogStream', Description: 'Log aggregation', Integrations: 'ELK, Splunk' },
+        ],
+        selector: 'table.services > tbody > tr',
+        count: 3,
+      }),
+    };
+
+    const result = await macros['extract'](page, [], { auto: true }, stubHelpers);
+
+    assert.equal(result.mode, 'auto');
+    assert.equal(result.count, 3);
+    assert.equal(result.items.length, 3);
+    assert.equal(result.items[0].Service, 'CloudSync');
+    assert.equal(result.items[0].Description, 'File syncing');
+    assert.equal(result.items[0].Integrations, 'Dropbox, S3');
+    assert.equal(result.items[1].Service, 'AuthGuard');
+    assert.ok(result.fields.includes('Service'));
+    assert.ok(result.fields.includes('Description'));
+    assert.ok(result.fields.includes('Integrations'));
+  });
+
+  it('falls back to generic extraction when table has no headers', async () => {
+    const page = {
+      url: () => 'https://example.com/data',
+      evaluate: async () => ({
+        items: [
+          { text: 'row 1 cell A row 1 cell B' },
+          { text: 'row 2 cell A row 2 cell B' },
+          { text: 'row 3 cell A row 3 cell B' },
+        ],
+        selector: 'table > tbody > tr',
+        count: 3,
+      }),
+    };
+
+    const result = await macros['extract'](page, [], { auto: true }, stubHelpers);
+
+    assert.equal(result.mode, 'auto');
+    assert.equal(result.count, 3);
+    assert.ok(result.items[0].text, 'should have text field for headerless table');
+    assert.ok(result.fields.includes('text'));
+  });
+
+  it('ignores extra cells beyond header count', async () => {
+    const page = {
+      url: () => 'https://example.com/wide',
+      evaluate: async () => ({
+        items: [
+          { Name: 'Alice', Role: 'Admin' },
+          { Name: 'Bob', Role: 'User' },
+          { Name: 'Carol', Role: 'Mod' },
+        ],
+        selector: 'table > tbody > tr',
+        count: 3,
+      }),
+    };
+
+    const result = await macros['extract'](page, [], { auto: true }, stubHelpers);
+
+    assert.equal(result.count, 3);
+    assert.equal(result.items[0].Name, 'Alice');
+    assert.equal(result.items[0].Role, 'Admin');
+    // No extra field should appear from the overflow cell
+    assert.equal(Object.keys(result.items[0]).length, 2);
+  });
+
+  it('extracts url field when a link is present in a table row', async () => {
+    const page = {
+      url: () => 'https://example.com/links',
+      evaluate: async () => ({
+        items: [
+          { Product: 'Widget', Price: '$10', url: '/products/widget' },
+          { Product: 'Gadget', Price: '$25', url: '/products/gadget' },
+          { Product: 'Gizmo', Price: '$15', url: '/products/gizmo' },
+        ],
+        selector: 'table > tbody > tr',
+        count: 3,
+      }),
+    };
+
+    const result = await macros['extract'](page, [], { auto: true }, stubHelpers);
+
+    assert.equal(result.count, 3);
+    assert.equal(result.items[0].Product, 'Widget');
+    assert.equal(result.items[0].url, '/products/widget');
+    assert.ok(result.fields.includes('url'));
+    assert.ok(result.fields.includes('Product'));
+    assert.ok(result.fields.includes('Price'));
+  });
+});
