@@ -41,20 +41,22 @@ async function detectMainContent(page) {
     }
 
     if (mainLocator) {
-      const compLocator = page.locator(compSelector);
-      const compCount = await compLocator.count();
-      if (compCount > 0) {
-        const cap = Math.min(compCount, 3);
-        return {
-          ariaSnapshot: async () => {
-            const parts = [await mainLocator.ariaSnapshot()];
-            for (let i = 0; i < cap; i++) {
-              try { parts.push(await compLocator.nth(i).ariaSnapshot()); } catch { /* skip */ }
+      try {
+        const compLocator = page.locator(compSelector);
+        const compCount = await compLocator.count();
+        if (compCount > 0) {
+          const cap = Math.min(compCount, 3);
+          return {
+            ariaSnapshot: async () => {
+              const parts = [await mainLocator.ariaSnapshot()];
+              await Promise.all(Array.from({ length: cap }, (_, i) =>
+                compLocator.nth(i).ariaSnapshot().then(s => { parts[i + 1] = s; }).catch(() => {})
+              ));
+              return parts.filter(Boolean).join('\n');
             }
-            return parts.join('\n');
-          }
-        };
-      }
+          };
+        }
+      } catch { /* complementary detection failed, return main only */ }
       return mainLocator;
     }
   } catch {
@@ -1706,6 +1708,63 @@ describe('detectMainContent', () => {
     const result = await detectMainContent(mockPage);
     const snapshot = await result.ariaSnapshot();
     assert.equal(snapshot, '- heading "Body Fallback"', 'should fall back to body, not check for aside');
+  });
+
+  it('returns main when complementary count() throws', async () => {
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main') {
+          return {
+            first() {
+              return {
+                count: async () => 1,
+                ariaSnapshot: async () => '- heading "Main Survives"'
+              };
+            }
+          };
+        }
+        if (selector === '[role="main"]') {
+          return { first() { return { count: async () => 0 }; } };
+        }
+        if (selector.includes('~ aside') || selector.includes('complementary')) {
+          return { count: async () => { throw new Error('detached frame'); } };
+        }
+        return { ariaSnapshot: async () => 'body' };
+      }
+    };
+    const result = await detectMainContent(mockPage);
+    const snapshot = await result.ariaSnapshot();
+    assert.equal(snapshot, '- heading "Main Survives"', 'should return main, not fall to body');
+  });
+
+  it('returns main content when all complementary ariaSnapshot calls fail', async () => {
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main') {
+          return {
+            first() {
+              return {
+                count: async () => 1,
+                ariaSnapshot: async () => '- heading "Main Only"'
+              };
+            }
+          };
+        }
+        if (selector === '[role="main"]') {
+          return { first() { return { count: async () => 0 }; } };
+        }
+        if (selector.includes('~ aside') || selector.includes('complementary')) {
+          return {
+            count: async () => 2,
+            nth() { return { ariaSnapshot: async () => { throw new Error('gone'); } }; }
+          };
+        }
+        return { ariaSnapshot: async () => 'body' };
+      }
+    };
+    const result = await detectMainContent(mockPage);
+    const snapshot = await result.ariaSnapshot();
+    assert.equal(snapshot, '- heading "Main Only"', 'should return just main when all complementary fail');
   });
 });
 

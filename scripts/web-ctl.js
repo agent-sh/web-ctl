@@ -114,20 +114,22 @@ async function detectMainContent(page) {
     }
 
     if (mainLocator) {
-      const compLocator = page.locator(compSelector);
-      const compCount = await compLocator.count();
-      if (compCount > 0) {
-        const cap = Math.min(compCount, 3);
-        return {
-          ariaSnapshot: async () => {
-            const parts = [await mainLocator.ariaSnapshot()];
-            for (let i = 0; i < cap; i++) {
-              try { parts.push(await compLocator.nth(i).ariaSnapshot()); } catch { /* skip */ }
+      try {
+        const compLocator = page.locator(compSelector);
+        const compCount = await compLocator.count();
+        if (compCount > 0) {
+          const cap = Math.min(compCount, 3);
+          return {
+            ariaSnapshot: async () => {
+              const parts = [await mainLocator.ariaSnapshot()];
+              await Promise.all(Array.from({ length: cap }, (_, i) =>
+                compLocator.nth(i).ariaSnapshot().then(s => { parts[i + 1] = s; }).catch(() => {})
+              ));
+              return parts.filter(Boolean).join('\n');
             }
-            return parts.join('\n');
-          }
-        };
-      }
+          };
+        }
+      } catch { /* complementary detection failed, return main only */ }
       return mainLocator;
     }
   } catch {
