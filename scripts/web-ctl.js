@@ -432,7 +432,8 @@ async function runAction(sessionName, action, actionArgs, opts) {
         session = sessionStore.getSession(sessionName);
       }
       if (!session) {
-        output({ ok: false, command: `run ${action}`, session: sessionName, error: 'session_not_found', message: `Session "${sessionName}" not found` });
+        const isRace = err.message && err.message.includes('already exists');
+        output({ ok: false, command: `run ${action}`, session: sessionName, error: isRace ? 'session_not_found' : 'session_create_failed', message: isRace ? `Session "${sessionName}" not found` : err.message });
         return;
       }
     }

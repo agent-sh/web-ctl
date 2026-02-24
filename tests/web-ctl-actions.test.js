@@ -529,10 +529,9 @@ describe('auto-create session CLI integration', () => {
 
   it('includes autoCreated in error response when action fails', () => {
     const result = runCliSafe('run', 'errtest', 'goto', 'https://example.com');
-    if (result.ok === false && result.autoCreated === true) {
-      assert.equal(result.autoCreated, true,
-        'error response should include autoCreated when session was auto-created');
-    }
+    assert.equal(result.ok, false, 'action should fail without playwright');
+    assert.equal(result.autoCreated, true,
+      'error response should include autoCreated when session was auto-created');
   });
 
   it('does not auto-create when session already exists', () => {
