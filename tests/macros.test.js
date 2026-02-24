@@ -5,17 +5,17 @@ const assert = require('node:assert/strict');
 const { macros } = require('../scripts/macros');
 
 describe('macros exports', () => {
-  it('exports all 14 macros', () => {
+  it('exports all 15 macros', () => {
     const expected = [
       'select-option', 'tab-switch', 'modal-dismiss', 'form-fill',
       'search-select', 'date-pick', 'file-upload', 'hover-reveal',
       'scroll-to', 'wait-toast', 'iframe-action', 'login',
-      'next-page', 'paginate'
+      'next-page', 'paginate', 'extract'
     ];
     for (const name of expected) {
       assert.equal(typeof macros[name], 'function', `macro "${name}" should be a function`);
     }
-    assert.equal(Object.keys(macros).length, 14, 'should have exactly 14 macros');
+    assert.equal(Object.keys(macros).length, 15, 'should have exactly 15 macros');
   });
 });
 
@@ -1297,5 +1297,245 @@ describe('hasMore accuracy', () => {
     assert.equal(result.pages, 1);
     assert.equal(result.hasMore, false);
     assert.deepEqual(result.items, ['Only item']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Extract macro tests
+// ---------------------------------------------------------------------------
+
+describe('extract validation', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+  const stubPage = {};
+
+  it('rejects when neither --selector nor --auto provided', async () => {
+    await assert.rejects(
+      () => macros['extract'](stubPage, [], {}, stubHelpers),
+      /Usage: extract/
+    );
+  });
+
+  it('rejects when both --selector and --auto provided', async () => {
+    await assert.rejects(
+      () => macros['extract'](stubPage, [], { selector: '.item', auto: true }, stubHelpers),
+      /Cannot use both/
+    );
+  });
+
+  it('rejects non-numeric --max-items', async () => {
+    await assert.rejects(
+      () => macros['extract'](stubPage, [], { selector: '.item', maxItems: 'abc' }, stubHelpers),
+      /Invalid --max-items/
+    );
+  });
+
+  it('rejects --fields with --auto mode', async () => {
+    await assert.rejects(
+      () => macros['extract'](stubPage, [], { auto: true, fields: 'title,url' }, stubHelpers),
+      /--fields is only valid with --selector/
+    );
+  });
+});
+
+describe('extract selector mode', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+
+  it('extracts items from matched elements', async () => {
+    const page = {
+      url: () => 'https://example.com/blog',
+      $$eval: async (selector, fn, args) => {
+        // Simulate the browser-side extraction returning items
+        assert.equal(selector, '.post');
+        return [
+          { title: 'First Post', url: '/post/1', text: 'Hello world' },
+          { title: 'Second Post', url: '/post/2', text: 'Goodbye world' },
+        ];
+      },
+    };
+
+    const result = await macros['extract'](page, [], { selector: '.post' }, stubHelpers);
+
+    assert.equal(result.mode, 'selector');
+    assert.equal(result.selector, '.post');
+    assert.equal(result.count, 2);
+    assert.equal(result.items.length, 2);
+    assert.equal(result.items[0].title, 'First Post');
+    assert.equal(result.url, 'https://example.com/blog');
+  });
+
+  it('respects --max-items cap', async () => {
+    const page = {
+      url: () => 'https://example.com/list',
+      $$eval: async (selector, fn, args) => {
+        // The fn receives [fields, maxItems, fieldMaxLen]
+        // Simulate that browser returns only up to maxItems
+        const maxItems = args[1];
+        const all = Array.from({ length: 10 }, (_, i) => ({ title: `Item ${i + 1}` }));
+        return all.slice(0, maxItems);
+      },
+    };
+
+    const result = await macros['extract'](page, [], {
+      selector: '.card',
+      maxItems: '3',
+    }, stubHelpers);
+
+    assert.equal(result.count, 3);
+    assert.equal(result.items.length, 3);
+  });
+
+  it('returns empty items when selector matches nothing', async () => {
+    const page = {
+      url: () => 'https://example.com/empty',
+      $$eval: async () => [],
+    };
+
+    const result = await macros['extract'](page, [], { selector: '.nonexistent' }, stubHelpers);
+
+    assert.equal(result.count, 0);
+    assert.deepEqual(result.items, []);
+    assert.equal(result.mode, 'selector');
+  });
+
+  it('extracts only specified --fields subset', async () => {
+    const page = {
+      url: () => 'https://example.com/articles',
+      $$eval: async (selector, fn, args) => {
+        const fields = args[0];
+        assert.deepEqual(fields, ['title', 'author']);
+        return [
+          { title: 'Article One', author: 'Alice' },
+          { title: 'Article Two', author: 'Bob' },
+        ];
+      },
+    };
+
+    const result = await macros['extract'](page, [], {
+      selector: '.article',
+      fields: 'title,author',
+    }, stubHelpers);
+
+    assert.deepEqual(result.fields, ['title', 'author']);
+    assert.equal(result.count, 2);
+    assert.equal(result.items[0].author, 'Alice');
+  });
+
+  it('returns correct metadata', async () => {
+    const page = {
+      url: () => 'https://example.com/products',
+      $$eval: async () => [
+        { title: 'Widget', url: '/w/1' },
+      ],
+    };
+
+    const result = await macros['extract'](page, [], { selector: '.product' }, stubHelpers);
+
+    assert.equal(result.mode, 'selector');
+    assert.equal(result.selector, '.product');
+    assert.deepEqual(result.fields, ['title', 'url', 'text']);
+    assert.equal(result.count, 1);
+    assert.equal(result.url, 'https://example.com/products');
+    assert.equal(result.snapshot, '(stub)');
+  });
+});
+
+describe('extract auto-detect mode', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+
+  it('detects repeated siblings and returns items', async () => {
+    const page = {
+      url: () => 'https://example.com/feed',
+      evaluate: async (fn, maxItems) => {
+        // Simulate browser returning detected items
+        return {
+          items: [
+            { title: 'Post A', url: '/a' },
+            { title: 'Post B', url: '/b' },
+            { title: 'Post C', url: '/c' },
+          ],
+          selector: 'main > ul > li',
+          count: 3,
+        };
+      },
+    };
+
+    const result = await macros['extract'](page, [], { auto: true }, stubHelpers);
+
+    assert.equal(result.mode, 'auto');
+    assert.equal(result.selector, 'main > ul > li');
+    assert.equal(result.count, 3);
+    assert.equal(result.items.length, 3);
+    assert.equal(result.items[0].title, 'Post A');
+    assert.ok(result.fields.includes('title'));
+    assert.ok(result.fields.includes('url'));
+  });
+
+  it('throws when no repeated pattern found', async () => {
+    const page = {
+      url: () => 'https://example.com/about',
+      evaluate: async () => {
+        return { error: 'No repeated pattern detected on this page.' };
+      },
+    };
+
+    await assert.rejects(
+      () => macros['extract'](page, [], { auto: true }, stubHelpers),
+      /No repeated pattern detected/
+    );
+  });
+
+  it('respects --max-items in auto mode', async () => {
+    let receivedCap;
+    const page = {
+      url: () => 'https://example.com/search',
+      evaluate: async (fn, maxItems) => {
+        receivedCap = maxItems;
+        const items = Array.from({ length: maxItems }, (_, i) => ({ title: `R${i + 1}` }));
+        return { items, selector: '#results > div', count: items.length };
+      },
+    };
+
+    const result = await macros['extract'](page, [], {
+      auto: true,
+      maxItems: '5',
+    }, stubHelpers);
+
+    assert.equal(receivedCap, 5);
+    assert.equal(result.count, 5);
+    assert.equal(result.items.length, 5);
+  });
+
+  it('includes detected selector in result', async () => {
+    const page = {
+      url: () => 'https://example.com/catalog',
+      evaluate: async () => ({
+        items: [{ title: 'X' }],
+        selector: '#product-list > div.product-card',
+        count: 1,
+      }),
+    };
+
+    const result = await macros['extract'](page, [], { auto: true }, stubHelpers);
+
+    assert.equal(result.selector, '#product-list > div.product-card');
+    assert.equal(result.mode, 'auto');
   });
 });
