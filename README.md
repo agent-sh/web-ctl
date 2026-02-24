@@ -128,6 +128,8 @@ web-ctl session end github
 | `extract` | `run <s> extract --selector <sel> [--fields f1,f2] [--max-items N]` | `{ url, mode, selector, fields, count, items, snapshot }` |
 | `extract` | `run <s> extract --auto [--max-items N]` | `{ url, mode, selector, fields, count, items, snapshot }` |
 
+**Table-aware extraction**: When `--auto` detects a table with `<th>` headers, items include per-column data (e.g., `{ Service: "Runtime", Description: "..." }`) instead of a single `text` field. Falls back to generic extraction when no headers are found.
+
 ### click vs click-wait
 
 `click` fires the click and captures a snapshot immediately. For SPAs where React/Vue re-renders asynchronously, use `click-wait` or `click --wait-stable` - these wait for network idle and DOM stability (no mutations for 500ms) before returning.
