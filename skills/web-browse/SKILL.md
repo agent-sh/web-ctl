@@ -361,6 +361,37 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> fill "#email" user@test.com
 
 Skips the snapshot entirely. The `snapshot` field is omitted from the JSON response. Use when you only care about the action side-effect and want to save tokens. The explicit `snapshot` action ignores this flag.
 
+### --snapshot-max-lines N - Truncate by Line Count
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-max-lines 50
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> --snapshot-max-lines 100
+```
+
+Hard-caps the snapshot output to N lines. A marker like `... (42 more lines)` is appended when lines are omitted. Applied after all other snapshot transforms, so it acts as a final safety net. Max value: 10000.
+
+### --snapshot-collapse - Collapse Repeated Siblings
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-collapse
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> --snapshot-collapse
+```
+
+Detects consecutive siblings of the same ARIA type at each depth level and collapses them. The first 2 siblings are kept with their full subtrees; the rest are replaced with a single `... (K more <type>)` marker. Works recursively on nested structures.
+
+Ideal for navigation menus, long lists, and data tables where dozens of identical `listitem` or `row` nodes inflate the snapshot without adding new information.
+
+### --snapshot-text-only - Content Only Mode
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-text-only
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> --snapshot-text-only --snapshot-max-lines 50
+```
+
+Strips structural container nodes (list, listitem, group, region, main, form, table, row, grid, generic, etc.) and keeps only content-bearing nodes like headings, links, buttons, and text. Structural nodes that carry a label (e.g., `navigation "Main"`) are preserved. Indentation is re-compressed to close gaps left by removed nodes.
+
+Use this for dense documentation pages where the ARIA tree is dominated by structural wrappers. Combines well with `--snapshot-max-lines` for a compact content summary.
+
 ## Selector Syntax
 
 | Pattern | Example | Description |
