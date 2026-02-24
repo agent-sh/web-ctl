@@ -285,13 +285,13 @@ Returns: `{ url, startUrl, pages, totalItems, items, hasMore, snapshot }`
 **Selector mode** - extract fields from elements matching a CSS selector:
 
 ```bash
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> extract --selector <css-selector> [--fields f1,f2,...] [--max-items N]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> extract --selector <css-selector> [--fields f1,f2,...] [--max-items N] [--max-field-length N]
 ```
 
 **Auto-detect mode** - automatically find repeated patterns on the page:
 
 ```bash
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> extract --auto [--max-items N]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> extract --auto [--max-items N] [--max-field-length N]
 ```
 
 Extracts structured data from repeated list items. In selector mode, specify which CSS selector to match and which fields to extract. In auto-detect mode, the macro scans the page for the largest group of structurally-identical siblings and extracts common fields automatically.
@@ -309,6 +309,7 @@ Extracts structured data from repeated list items. In selector mode, specify whi
 **Options**:
 - `--fields f1,f2,...` - comma-separated field names (selector mode only, default: title,url,text)
 - `--max-items N` - maximum items to return (default: 100, max: 500)
+- `--max-field-length N` - maximum characters per field (default: 500, max: 2000)
 
 **Examples**:
 
