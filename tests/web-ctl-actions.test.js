@@ -201,6 +201,7 @@ describe('snapshot option flag parsing', () => {
     '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
     '--exact', '--accept', '--submit', '--dismiss',
     '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
+    '--snapshot-full',
   ]);
 
   // Replicate parseOptions for unit testing
@@ -305,6 +306,17 @@ describe('snapshot option flag parsing', () => {
   it('--snapshot-compact does not consume next positional arg', () => {
     const opts = parseOptions(['--snapshot-compact', 'css=nav']);
     assert.equal(opts.snapshotCompact, true);
+    assert.equal(opts['css=nav'], undefined);
+  });
+
+  it('parses --snapshot-full as snapshotFull boolean', () => {
+    const opts = parseOptions(['--snapshot-full']);
+    assert.equal(opts.snapshotFull, true);
+  });
+
+  it('--snapshot-full does not consume next positional arg', () => {
+    const opts = parseOptions(['--snapshot-full', 'css=nav']);
+    assert.equal(opts.snapshotFull, true);
     assert.equal(opts['css=nav'], undefined);
   });
 
@@ -498,6 +510,18 @@ describe('snapshot options in web-ctl source', () => {
     assert.ok(collapseIdx > compactIdx, 'collapseRepeated should follow compactFormat');
     assert.ok(textOnlyIdx > collapseIdx, 'textOnly should follow collapseRepeated');
     assert.ok(maxLinesIdx > textOnlyIdx, 'trimByLines should follow textOnly');
+  });
+
+  it('BOOLEAN_FLAGS includes --snapshot-full', () => {
+    assert.ok(webCtlSource.includes("'--snapshot-full'"), '--snapshot-full should be in BOOLEAN_FLAGS');
+  });
+
+  it('help text contains --snapshot-full flag', () => {
+    assert.ok(webCtlSource.includes('--snapshot-full'), 'help should document --snapshot-full');
+  });
+
+  it('detectMainContent function exists', () => {
+    assert.ok(webCtlSource.includes('async function detectMainContent(page)'), 'detectMainContent should be defined');
   });
 });
 

@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Smart default snapshot scoping - snapshots automatically scope to `<main>` element (then `[role="main"]`, fallback to `<body>`), reducing output size by excluding navigation, headers, and footers. Use `--snapshot-full` to capture full page body when needed
 - `--snapshot-compact` flag for token-efficient LLM consumption - applies four transforms: link collapsing (merges link + /url child into `link "Title" -> /path`), heading inlining (merges heading with single link child), decorative image removal (strips img nodes with empty or single-char alt text), and duplicate URL dedup (removes second occurrence at same depth scope). Applied after `--snapshot-depth` and before `--snapshot-collapse` in the pipeline
 - `--snapshot-max-lines <N>` flag to truncate snapshot output to a maximum number of lines, with a `... (K more lines)` marker when lines are omitted
 - `--snapshot-collapse` flag to collapse repeated consecutive siblings of the same ARIA type - keeps first 2 with subtrees, replaces the rest with `... (K more <type>)` markers. Works recursively on nested structures

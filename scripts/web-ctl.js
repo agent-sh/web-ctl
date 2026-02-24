@@ -20,6 +20,7 @@ const BOOLEAN_FLAGS = new Set([
   '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
   '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
+  '--snapshot-full',
 ]);
 
 function validateSessionName(name) {
@@ -86,6 +87,26 @@ function resolveSelector(page, selector) {
 }
 
 /**
+ * Detect the main content area of the page.
+ * Tries <main>, then [role="main"], then falls back to <body>.
+ *
+ * @param {object} page - Playwright page object
+ * @returns {object} Playwright locator for the main content area
+ */
+async function detectMainContent(page) {
+  try {
+    const mainTag = page.locator('main').first();
+    const mainRole = page.locator('[role="main"]').first();
+    const [mainCount, roleCount] = await Promise.all([mainTag.count(), mainRole.count()]);
+    if (mainCount > 0) return mainTag;
+    if (roleCount > 0) return mainRole;
+  } catch {
+    // fall through to body
+  }
+  return page.locator('body');
+}
+
+/**
  * Get accessibility tree snapshot formatted as text.
  * Uses Playwright's ariaSnapshot API (page.accessibility was removed in v1.50+).
  *
@@ -93,6 +114,7 @@ function resolveSelector(page, selector) {
  * @param {object} [opts={}] - Snapshot options
  * @param {boolean} [opts.noSnapshot] - Return null to omit snapshot entirely
  * @param {string} [opts.snapshotSelector] - Scope snapshot to a DOM subtree
+ * @param {boolean} [opts.snapshotFull] - Use full page body (skip <main> auto-detection)
  * @param {number} [opts.snapshotDepth] - Limit ARIA tree depth
  * @param {boolean} [opts.snapshotCompact] - Compact format for token efficiency
  * @param {boolean} [opts.snapshotCollapse] - Collapse repeated siblings
@@ -104,7 +126,9 @@ async function getSnapshot(page, opts = {}) {
   try {
     const root = opts.snapshotSelector
       ? resolveSelector(page, opts.snapshotSelector)
-      : page.locator('body');
+      : opts.snapshotFull
+        ? page.locator('body')
+        : await detectMainContent(page);
     const raw = await root.ariaSnapshot();
     let result = raw;
     if (opts.snapshotDepth) result = trimByDepth(result, opts.snapshotDepth);
@@ -1170,6 +1194,7 @@ Snapshot options (apply to any action that returns a snapshot):
                                   remove decorative images, dedup URLs
   --snapshot-collapse           Collapse repeated siblings (show first 2)
   --snapshot-text-only          Strip structural nodes, keep content only
+  --snapshot-full               Use full page body (skip <main> auto-detection)
 
 Selector syntax:
   role=button[name='Submit']    ARIA role selector

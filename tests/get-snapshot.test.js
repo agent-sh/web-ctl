@@ -23,12 +23,28 @@ function resolveSelector(page, selector) {
   return page.locator(selector);
 }
 
+// Keep this in sync with scripts/web-ctl.js.
+async function detectMainContent(page) {
+  try {
+    const mainTag = page.locator('main').first();
+    const mainRole = page.locator('[role="main"]').first();
+    const [mainCount, roleCount] = await Promise.all([mainTag.count(), mainRole.count()]);
+    if (mainCount > 0) return mainTag;
+    if (roleCount > 0) return mainRole;
+  } catch {
+    // fall through to body
+  }
+  return page.locator('body');
+}
+
 async function getSnapshot(page, opts = {}) {
   if (opts.noSnapshot) return null;
   try {
     const root = opts.snapshotSelector
       ? resolveSelector(page, opts.snapshotSelector)
-      : page.locator('body');
+      : opts.snapshotFull
+        ? page.locator('body')
+        : await detectMainContent(page);
     const raw = await root.ariaSnapshot();
     let result = raw;
     if (opts.snapshotDepth) result = trimByDepth(result, opts.snapshotDepth);
@@ -734,13 +750,22 @@ describe('trimByDepth', () => {
 // ============ getSnapshot tests ============
 
 describe('getSnapshot', () => {
-  it('returns aria snapshot from body locator', async () => {
+  it('returns aria snapshot from body locator when no main element', async () => {
     const mockPage = {
       locator(selector) {
-        assert.equal(selector, 'body');
-        return {
-          ariaSnapshot: async () => '- heading "Example" [level=1]\n- link "More"'
-        };
+        if (selector === 'main' || selector === '[role="main"]') {
+          return {
+            first() {
+              return { count: async () => 0 };
+            }
+          };
+        }
+        if (selector === 'body') {
+          return {
+            ariaSnapshot: async () => '- heading "Example" [level=1]\n- link "More"'
+          };
+        }
+        return { ariaSnapshot: async () => '' };
       }
     };
     const result = await getSnapshot(mockPage);
@@ -837,10 +862,19 @@ describe('getSnapshot with opts', () => {
   it('trims output when snapshotDepth is set', async () => {
     const mockPage = {
       locator(selector) {
-        assert.equal(selector, 'body');
-        return {
-          ariaSnapshot: async () => '- navigation\n  - link "Home"\n  - link "About"'
-        };
+        if (selector === 'main' || selector === '[role="main"]') {
+          return {
+            first() {
+              return { count: async () => 0 };
+            }
+          };
+        }
+        if (selector === 'body') {
+          return {
+            ariaSnapshot: async () => '- navigation\n  - link "Home"\n  - link "About"'
+          };
+        }
+        return { ariaSnapshot: async () => '' };
       }
     };
     const result = await getSnapshot(mockPage, { snapshotDepth: 1 });
@@ -869,13 +903,22 @@ describe('getSnapshot with opts', () => {
     assert.ok(!result.includes('link "Item"'));
   });
 
-  it('preserves default behavior with empty opts', async () => {
+  it('falls back to body with empty opts when no main element', async () => {
     const mockPage = {
       locator(selector) {
-        assert.equal(selector, 'body');
-        return {
-          ariaSnapshot: async () => '- heading "Title"'
-        };
+        if (selector === 'main' || selector === '[role="main"]') {
+          return {
+            first() {
+              return { count: async () => 0 };
+            }
+          };
+        }
+        if (selector === 'body') {
+          return {
+            ariaSnapshot: async () => '- heading "Title"'
+          };
+        }
+        return { ariaSnapshot: async () => '' };
       }
     };
     const result = await getSnapshot(mockPage, {});
@@ -1199,6 +1242,13 @@ describe('getSnapshot pipeline', () => {
   function makeMockPage(snapshot) {
     return {
       locator(selector) {
+        if (selector === 'main' || selector === '[role="main"]') {
+          return {
+            first() {
+              return { count: async () => 0 };
+            }
+          };
+        }
         return { ariaSnapshot: async () => snapshot };
       }
     };
@@ -1295,5 +1345,272 @@ describe('getSnapshot pipeline', () => {
     assert.ok(result.includes('link "B"'), 'second kept sibling link should survive');
     assert.ok(!result.includes('- main'), 'structural main should be stripped by text-only');
     assert.ok(!result.includes('- list\n'), 'structural list should be stripped by text-only');
+  });
+});
+
+// ============ detectMainContent tests ============
+
+describe('detectMainContent', () => {
+  it('returns main locator when <main> element exists', async () => {
+    const mainLocator = { ariaSnapshot: async () => 'main content' };
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main') {
+          return {
+            first() {
+              return {
+                count: async () => 1,
+                ariaSnapshot: mainLocator.ariaSnapshot
+              };
+            }
+          };
+        }
+        if (selector === '[role="main"]') {
+          return {
+            first() {
+              return { count: async () => 0 };
+            }
+          };
+        }
+        return { ariaSnapshot: async () => 'body content' };
+      }
+    };
+    const result = await detectMainContent(mockPage);
+    const snapshot = await result.ariaSnapshot();
+    assert.equal(snapshot, 'main content');
+  });
+
+  it('returns role=main locator when no <main> but role exists', async () => {
+    const roleLocator = { ariaSnapshot: async () => 'role content' };
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main') {
+          return {
+            first() {
+              return { count: async () => 0 };
+            }
+          };
+        }
+        if (selector === '[role="main"]') {
+          return {
+            first() {
+              return {
+                count: async () => 1,
+                ariaSnapshot: roleLocator.ariaSnapshot
+              };
+            }
+          };
+        }
+        return { ariaSnapshot: async () => 'body content' };
+      }
+    };
+    const result = await detectMainContent(mockPage);
+    const snapshot = await result.ariaSnapshot();
+    assert.equal(snapshot, 'role content');
+  });
+
+  it('falls back to body when neither main nor role exists', async () => {
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main' || selector === '[role="main"]') {
+          return {
+            first() {
+              return { count: async () => 0 };
+            }
+          };
+        }
+        if (selector === 'body') {
+          return { ariaSnapshot: async () => 'body content' };
+        }
+        return { ariaSnapshot: async () => '' };
+      }
+    };
+    const result = await detectMainContent(mockPage);
+    const snapshot = await result.ariaSnapshot();
+    assert.equal(snapshot, 'body content');
+  });
+
+  it('prioritizes <main> over [role="main"] when both exist', async () => {
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main') {
+          return {
+            first() {
+              return {
+                count: async () => 1,
+                ariaSnapshot: async () => 'main tag content'
+              };
+            }
+          };
+        }
+        if (selector === '[role="main"]') {
+          return {
+            first() {
+              return {
+                count: async () => 1,
+                ariaSnapshot: async () => 'role content'
+              };
+            }
+          };
+        }
+        return { ariaSnapshot: async () => 'body content' };
+      }
+    };
+    const result = await detectMainContent(mockPage);
+    const snapshot = await result.ariaSnapshot();
+    assert.equal(snapshot, 'main tag content', '<main> should take priority over [role="main"]');
+  });
+
+  it('falls back to body when locator.count() throws', async () => {
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main' || selector === '[role="main"]') {
+          return {
+            first() {
+              return { count: async () => { throw new Error('detached'); } };
+            }
+          };
+        }
+        if (selector === 'body') {
+          return { ariaSnapshot: async () => 'body fallback' };
+        }
+        return { ariaSnapshot: async () => '' };
+      }
+    };
+    const result = await detectMainContent(mockPage);
+    const snapshot = await result.ariaSnapshot();
+    assert.equal(snapshot, 'body fallback');
+  });
+});
+
+// ============ getSnapshot auto-scoping tests ============
+
+describe('getSnapshot auto-scoping', () => {
+  it('auto-scopes to main when present', async () => {
+    let usedLocator = null;
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main') {
+          return {
+            first() {
+              const loc = {
+                count: async () => 1,
+                ariaSnapshot: async () => '- heading "Main Content"'
+              };
+              usedLocator = 'main';
+              return loc;
+            }
+          };
+        }
+        if (selector === '[role="main"]') {
+          return {
+            first() {
+              return { count: async () => 0 };
+            }
+          };
+        }
+        return { ariaSnapshot: async () => '- heading "Full Body"' };
+      }
+    };
+    const result = await getSnapshot(mockPage);
+    assert.equal(usedLocator, 'main');
+    assert.equal(result, '- heading "Main Content"');
+  });
+
+  it('respects snapshotFull flag - uses body even when main exists', async () => {
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main') {
+          return {
+            first() {
+              return {
+                count: async () => 1,
+                ariaSnapshot: async () => '- heading "Main Only"'
+              };
+            }
+          };
+        }
+        if (selector === 'body') {
+          return {
+            ariaSnapshot: async () => '- heading "Full Body"'
+          };
+        }
+        return {
+          first() { return { count: async () => 0 }; },
+          ariaSnapshot: async () => ''
+        };
+      }
+    };
+    const result = await getSnapshot(mockPage, { snapshotFull: true });
+    assert.equal(result, '- heading "Full Body"');
+  });
+
+  it('snapshotSelector takes priority over auto-detection', async () => {
+    let usedSelector = null;
+    const mockPage = {
+      locator(selector) {
+        usedSelector = selector;
+        if (selector === 'main') {
+          return {
+            first() {
+              return {
+                count: async () => 1,
+                ariaSnapshot: async () => '- heading "Main"'
+              };
+            }
+          };
+        }
+        return {
+          ariaSnapshot: async () => '- heading "Custom Scope"'
+        };
+      }
+    };
+    const result = await getSnapshot(mockPage, { snapshotSelector: 'css=nav' });
+    assert.equal(usedSelector, 'nav', 'Should use custom selector, not main detection');
+    assert.equal(result, '- heading "Custom Scope"');
+  });
+
+  it('snapshotSelector takes priority over snapshotFull', async () => {
+    let usedSelector = null;
+    const mockPage = {
+      locator(selector) {
+        usedSelector = selector;
+        return {
+          ariaSnapshot: async () => '- heading "Selector Wins"'
+        };
+      }
+    };
+    const result = await getSnapshot(mockPage, { snapshotSelector: '#sidebar', snapshotFull: true });
+    assert.equal(usedSelector, '#sidebar', 'snapshotSelector should override snapshotFull');
+    assert.equal(result, '- heading "Selector Wins"');
+  });
+
+  it('snapshotFull works with snapshot transform flags', async () => {
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main') {
+          return {
+            first() {
+              return { count: async () => 1, ariaSnapshot: async () => 'main' };
+            }
+          };
+        }
+        if (selector === '[role="main"]') {
+          return {
+            first() { return { count: async () => 0 }; }
+          };
+        }
+        if (selector === 'body') {
+          return {
+            ariaSnapshot: async () => '- navigation\n  - link "Home"\n  - link "About"'
+          };
+        }
+        return { ariaSnapshot: async () => '' };
+      }
+    };
+    const result = await getSnapshot(mockPage, { snapshotFull: true, snapshotDepth: 1 });
+    assert.ok(result.includes('- navigation'), 'Should include top-level node');
+    assert.ok(result.includes('- ...'), 'Should truncate deeper nodes');
+    assert.ok(!result.includes('link "Home"'), 'Should not include depth-2 nodes');
   });
 });
