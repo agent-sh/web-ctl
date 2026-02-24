@@ -750,6 +750,9 @@ Macros (higher-level actions):
   paginate --selector <sel>   Collect items across paginated pages
     [--max-pages N]             Max pages to visit (default: 5, max: 20)
     [--max-items N]             Max items to collect (default: 100, max: 500)
+  extract --selector <sel>     Extract structured data from repeated elements
+    --fields <f1,f2,...>          Fields to extract (default: title,url,text)
+    [--max-items N] [--auto]     Auto-detect mode finds repeated patterns
 
 Snapshot options (apply to any action that returns a snapshot):
   --snapshot-depth <N>          Limit ARIA tree depth (e.g. 3 for top 3 levels)
