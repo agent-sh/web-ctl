@@ -201,6 +201,7 @@ describe('snapshot option flag parsing', () => {
     '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
     '--exact', '--accept', '--submit', '--dismiss',
     '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
+    '--snapshot-full',
   ]);
 
   // Replicate parseOptions for unit testing
@@ -498,6 +499,18 @@ describe('snapshot options in web-ctl source', () => {
     assert.ok(collapseIdx > compactIdx, 'collapseRepeated should follow compactFormat');
     assert.ok(textOnlyIdx > collapseIdx, 'textOnly should follow collapseRepeated');
     assert.ok(maxLinesIdx > textOnlyIdx, 'trimByLines should follow textOnly');
+  });
+
+  it('BOOLEAN_FLAGS includes --snapshot-full', () => {
+    assert.ok(webCtlSource.includes("'--snapshot-full'"), '--snapshot-full should be in BOOLEAN_FLAGS');
+  });
+
+  it('help text contains --snapshot-full flag', () => {
+    assert.ok(webCtlSource.includes('--snapshot-full'), 'help should document --snapshot-full');
+  });
+
+  it('detectMainContent function exists', () => {
+    assert.ok(webCtlSource.includes('async function detectMainContent(page)'), 'detectMainContent should be defined');
   });
 });
 
