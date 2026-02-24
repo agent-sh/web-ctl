@@ -750,8 +750,10 @@ async function extract(page, actionArgs, opts, helpers) {
             return img ? img.getAttribute('src') : null;
           }
           default: {
-            // Generic: try [class*=name]
-            var gen = el.querySelector('[class*="' + name + '"]');
+            // Generic: try [class*=name] (sanitize for defense-in-depth)
+            var safeName = name.replace(/[^a-zA-Z0-9_-]/g, '');
+            if (!safeName) return null;
+            var gen = el.querySelector('[class*="' + safeName + '"]');
             return gen ? truncate((gen.textContent || '').trim()) : null;
           }
         }
@@ -828,7 +830,8 @@ async function extract(page, actionArgs, opts, helpers) {
     var parentIdMap = new Map();
     var nextId = 0;
     var allElements = document.body.querySelectorAll('*');
-    for (var i = 0; i < allElements.length; i++) {
+    var elementLimit = Math.min(allElements.length, 10000);
+    for (var i = 0; i < elementLimit; i++) {
       var el = allElements[i];
       var parent = el.parentElement;
       if (!parent) continue;
