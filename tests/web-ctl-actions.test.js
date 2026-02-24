@@ -867,6 +867,42 @@ describe('--ensure-auth flag', () => {
       'normal exit should guard closeBrowser with context null check'
     );
   });
+
+  it('nullifies context and page on timeout path', () => {
+    const timeoutIdx = webCtlSource.indexOf('Auth did not complete within timeout');
+    const nextBreak = webCtlSource.indexOf('break;', timeoutIdx);
+    const block = webCtlSource.slice(timeoutIdx, nextBreak);
+    assert.ok(block.includes('context = null'), 'timeout path should set context to null');
+    assert.ok(block.includes('page = null'), 'timeout path should set page to null');
+  });
+
+  it('breaks polling loop when page is closed', () => {
+    const ensureAuthIdx = webCtlSource.indexOf('if (opts.ensureAuth)');
+    const pollBlock = webCtlSource.slice(ensureAuthIdx, ensureAuthIdx + 600);
+    assert.ok(
+      pollBlock.includes('if (page.isClosed()) break'),
+      'polling loop should break when page is closed'
+    );
+  });
+
+  it('wraps headless relaunch in try-catch on success path', () => {
+    const authCompletedIdx = webCtlSource.indexOf('if (authCompleted)');
+    const elseIdx = webCtlSource.indexOf('} else {', authCompletedIdx + 50);
+    const successBlock = webCtlSource.slice(authCompletedIdx, elseIdx);
+    assert.ok(
+      successBlock.includes('try {') && successBlock.includes('launchBrowser'),
+      'success path should wrap headless relaunch in try-catch'
+    );
+  });
+
+  it('wraps closeBrowser in try-catch on timeout path', () => {
+    const elseIdx = webCtlSource.indexOf('Auth did not complete within timeout');
+    const beforeTimeout = webCtlSource.slice(elseIdx - 300, elseIdx);
+    assert.ok(
+      beforeTimeout.includes('try { await closeBrowser'),
+      'timeout path should wrap closeBrowser in try-catch'
+    );
+  });
 });
 
 describe('--ensure-auth flag parsing', () => {

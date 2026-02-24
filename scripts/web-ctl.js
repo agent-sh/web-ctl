@@ -981,16 +981,23 @@ async function runAction(sessionName, action, actionArgs, opts) {
                 }
                 if (authCompleted) {
                   await closeBrowser(sessionName, context);
-                  const headlessBrowser = await launchBrowser(sessionName, { headless: true });
-                  context = headlessBrowser.context;
-                  page = headlessBrowser.page;
-                  await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-                  const snapshot = await getSnapshot(page, opts);
-                  result = { url: page.url(), authWallDetected: true, ensureAuthCompleted: true,
-                             ...(snapshot != null && { snapshot }) };
+                  try {
+                    const headlessBrowser = await launchBrowser(sessionName, { headless: true });
+                    context = headlessBrowser.context;
+                    page = headlessBrowser.page;
+                    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    const snapshot = await getSnapshot(page, opts);
+                    result = { url: page.url(), authWallDetected: true, ensureAuthCompleted: true,
+                               ...(snapshot != null && { snapshot }) };
+                  } catch (relaunchErr) {
+                    result = { url, authWallDetected: true, ensureAuthCompleted: true,
+                               message: 'Auth completed but headless reload failed: ' + relaunchErr.message };
+                    context = null;
+                    page = null;
+                  }
                   break;
                 } else {
-                  await closeBrowser(sessionName, context);
+                  try { await closeBrowser(sessionName, context); } catch { /* already closed */ }
                   result = { url, authWallDetected: true, ensureAuthCompleted: false,
                              message: 'Auth did not complete within timeout' };
                   context = null;
