@@ -323,3 +323,705 @@ describe('paginate validation', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Pagination success path tests
+// ---------------------------------------------------------------------------
+
+/**
+ * Factory for mock Playwright page objects used by pagination macros.
+ *
+ * The mock precisely matches the Playwright locator API surface that
+ * detectPaginationLink, nextPage, and paginate actually call:
+ *   - page.locator(selector) -> locator
+ *   - page.getByRole(role, { name }) -> locator
+ *   - locator.count(), .first(), .all()
+ *   - element.isVisible(), .evaluate(fn), .getAttribute(attr),
+ *     .textContent(), .click()
+ *   - page.url(), page.goto(url, opts)
+ *
+ * Options:
+ *   url           - starting page URL
+ *   relNext       - { href } for a visible <a rel="next"> link
+ *   relNextLink   - { href } for an invisible <link rel="next"> element
+ *   roleLink      - { href } for a role="link" match ("Next" text)
+ *   roleButton    - truthy to provide a role="button" match (no href)
+ *   cssPattern    - { href } for a CSS-pattern pagination link
+ *   pageNumber    - { active, containerLinks } for page-number heuristic
+ *   items         - Map<selector, string[]> of items per locator selector
+ *   pages         - Array<{ items, paginationType }> for multi-page paginate
+ */
+function createMockPage(options = {}) {
+  let currentUrl = options.url || 'https://example.com/page/1';
+  let currentPageIndex = 0;
+
+  // Helper: create a locator-like object with zero matches
+  function emptyLocator() {
+    return {
+      count: async () => 0,
+      first: () => emptyLocator(),
+      all: async () => [],
+      isVisible: async () => false,
+      evaluate: async () => null,
+      getAttribute: async () => null,
+      textContent: async () => '',
+      click: async () => {},
+    };
+  }
+
+  // Helper: create a locator-like object wrapping a single visible element
+  function visibleElement(attrs = {}) {
+    const el = {
+      count: async () => 1,
+      first: () => el,
+      isVisible: async () => true,
+      evaluate: async (fn) => {
+        // detectPaginationLink calls evaluate(el => el.tagName.toLowerCase())
+        // We simulate by returning the tagName stored in attrs.
+        return attrs.tagName || 'a';
+      },
+      getAttribute: async (attr) => {
+        if (attr === 'href') return attrs.href ?? null;
+        return null;
+      },
+      textContent: async () => attrs.textContent || '',
+      click: async () => {
+        if (attrs.onClick) attrs.onClick();
+      },
+    };
+    return el;
+  }
+
+  // Exact selector strings used by detectPaginationLink for matching
+  const SELECTOR_REL_NEXT = 'a[rel="next"], link[rel="next"]';
+  const SELECTOR_CSS_PATTERNS =
+    '.pagination a.next, .pagination .next a, .pager-next a, ' +
+    'a[aria-label*="next" i], button[aria-label*="next" i], ' +
+    '[class*="pagination"] [class*="next"] a';
+  const SELECTOR_ACTIVE_PAGE = '[aria-current="page"], .pagination .active, .page-item.active';
+  const SELECTOR_PAG_CONTAINER = '.pagination, [role="navigation"], nav[aria-label*="pag" i]';
+
+  // Determine which heuristic selectors should match
+  function matchLocator(selector) {
+    // Heuristic 1: rel="next" links
+    if (selector === SELECTOR_REL_NEXT) {
+      if (options.relNext) {
+        return {
+          count: async () => 1,
+          first: () => visibleElement({
+            tagName: 'a',
+            href: options.relNext.href,
+          }),
+        };
+      }
+      if (options.relNextLink) {
+        return {
+          count: async () => 1,
+          first: () => visibleElement({
+            tagName: 'link',
+            href: options.relNextLink.href,
+          }),
+        };
+      }
+      return emptyLocator();
+    }
+
+    // Heuristic 3: CSS class/aria-label patterns
+    if (selector === SELECTOR_CSS_PATTERNS) {
+      if (options.cssPattern) {
+        return {
+          count: async () => 1,
+          first: () => visibleElement({
+            tagName: 'a',
+            href: options.cssPattern.href,
+          }),
+        };
+      }
+      return emptyLocator();
+    }
+
+    // Heuristic 4: active page number detection
+    if (selector === SELECTOR_ACTIVE_PAGE) {
+      if (options.pageNumber) {
+        return {
+          count: async () => 1,
+          first: () => visibleElement({
+            textContent: String(options.pageNumber.active),
+          }),
+        };
+      }
+      return emptyLocator();
+    }
+
+    // Heuristic 4: pagination container
+    if (selector === SELECTOR_PAG_CONTAINER) {
+      if (options.pageNumber) {
+        const container = {
+          count: async () => 1,
+          first: () => {
+            const containerEl = {
+              count: async () => 1,
+              getByRole: (role, roleOpts) => {
+                if (!options.pageNumber.containerLinks) return emptyLocator();
+                const target = options.pageNumber.containerLinks[roleOpts.name];
+                if (target) {
+                  return {
+                    count: async () => 1,
+                    first: () => visibleElement({
+                      tagName: role === 'link' ? 'a' : 'button',
+                      href: target.href ?? null,
+                      onClick: target.onClick,
+                    }),
+                  };
+                }
+                return emptyLocator();
+              },
+            };
+            return containerEl;
+          },
+        };
+        return container;
+      }
+      return emptyLocator();
+    }
+
+    // Item selector for paginate (generic CSS selector like '.item')
+    if (options.items && options.items[selector]) {
+      const texts = options.items[selector];
+      return {
+        count: async () => texts.length,
+        first: () => visibleElement({ textContent: texts[0] || '' }),
+        all: async () => texts.map(text => ({
+          textContent: async () => text,
+        })),
+      };
+    }
+
+    return emptyLocator();
+  }
+
+  const page = {
+    url: () => currentUrl,
+    goto: async (url) => { currentUrl = url; },
+    locator: (selector) => matchLocator(selector),
+    getByRole: (role, opts) => {
+      // Heuristic 2: role-based text matching
+      if (options.roleLink && role === 'link') {
+        return {
+          count: async () => 1,
+          first: () => visibleElement({
+            tagName: 'a',
+            href: options.roleLink.href,
+          }),
+        };
+      }
+      if (options.roleButton && role === 'button') {
+        let clicked = false;
+        return {
+          count: async () => 1,
+          first: () => visibleElement({
+            tagName: 'button',
+            href: null,
+            onClick: () => { clicked = true; },
+          }),
+        };
+      }
+      // Heuristic 2 fallback: if roleLink matches 'button' role or vice versa,
+      // the loop tries both 'link' then 'button'. Return empty for non-matching.
+      return emptyLocator();
+    },
+    // Track the current page index for multi-page scenarios
+    _advancePage: () => { currentPageIndex++; },
+    _setUrl: (url) => { currentUrl = url; },
+  };
+
+  return page;
+}
+
+describe('next-page success paths', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+
+  it('detects rel="next" <a> link and navigates via goto', async () => {
+    const page = createMockPage({
+      url: 'https://example.com/page/1',
+      relNext: { href: 'https://example.com/page/2' },
+    });
+
+    const result = await macros['next-page'](page, [], {}, stubHelpers);
+
+    assert.equal(result.previousUrl, 'https://example.com/page/1');
+    assert.equal(result.url, 'https://example.com/page/2');
+    assert.equal(result.nextPageDetected, 'rel-next');
+    assert.equal(result.snapshot, '(stub)');
+  });
+
+  it('detects <link rel="next"> and navigates via goto', async () => {
+    const page = createMockPage({
+      url: 'https://blog.example.com/posts',
+      relNextLink: { href: 'https://blog.example.com/posts?page=2' },
+    });
+
+    const result = await macros['next-page'](page, [], {}, stubHelpers);
+
+    assert.equal(result.previousUrl, 'https://blog.example.com/posts');
+    assert.equal(result.url, 'https://blog.example.com/posts?page=2');
+    assert.equal(result.nextPageDetected, 'rel-next-link');
+  });
+
+  it('detects role="link" with "Next" text and navigates via goto', async () => {
+    const page = createMockPage({
+      url: 'https://example.com/results?p=1',
+      roleLink: { href: '/results?p=2' },
+    });
+
+    const result = await macros['next-page'](page, [], {}, stubHelpers);
+
+    assert.equal(result.previousUrl, 'https://example.com/results?p=1');
+    assert.equal(result.nextPageDetected, 'role-text');
+    // role-text with href on an <a> triggers goto
+    assert.equal(result.url, '/results?p=2');
+  });
+
+  it('detects role="button" with "Next" text and navigates via click', async () => {
+    let clicked = false;
+    const page = createMockPage({
+      url: 'https://spa.example.com/feed',
+      roleButton: true,
+    });
+    // Override getByRole to track clicks precisely
+    page.getByRole = (role, opts) => {
+      if (role === 'link') {
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) };
+      }
+      if (role === 'button') {
+        const el = {
+          count: async () => 1,
+          first: () => el,
+          isVisible: async () => true,
+          evaluate: async () => 'button',
+          getAttribute: async () => null,
+          click: async () => { clicked = true; },
+        };
+        return { count: async () => 1, first: () => el };
+      }
+      return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) };
+    };
+
+    const result = await macros['next-page'](page, [], {}, stubHelpers);
+
+    assert.equal(clicked, true, 'should have clicked the button');
+    assert.equal(result.nextPageDetected, 'role-text');
+    assert.equal(result.previousUrl, 'https://spa.example.com/feed');
+  });
+
+  it('detects CSS pattern pagination link and navigates via goto', async () => {
+    const page = createMockPage({
+      url: 'https://forum.example.com/thread/42',
+      cssPattern: { href: '/thread/42?page=2' },
+    });
+
+    const result = await macros['next-page'](page, [], {}, stubHelpers);
+
+    assert.equal(result.previousUrl, 'https://forum.example.com/thread/42');
+    assert.equal(result.url, '/thread/42?page=2');
+    assert.equal(result.nextPageDetected, 'css-pattern');
+  });
+
+  it('detects page number heuristic and navigates to page N+1', async () => {
+    const page = createMockPage({
+      url: 'https://shop.example.com/products?page=3',
+      pageNumber: {
+        active: 3,
+        containerLinks: {
+          '4': { href: '/products?page=4' },
+        },
+      },
+    });
+
+    const result = await macros['next-page'](page, [], {}, stubHelpers);
+
+    assert.equal(result.previousUrl, 'https://shop.example.com/products?page=3');
+    assert.equal(result.url, '/products?page=4');
+    assert.equal(result.nextPageDetected, 'page-number');
+  });
+
+  it('prioritizes rel="next" over role-text heuristic', async () => {
+    // When both rel="next" and role-based links exist, rel="next" wins
+    const page = createMockPage({
+      url: 'https://example.com/list',
+      relNext: { href: '/list?p=2' },
+      roleLink: { href: '/list?page=2' },
+    });
+
+    const result = await macros['next-page'](page, [], {}, stubHelpers);
+
+    assert.equal(result.nextPageDetected, 'rel-next');
+    assert.equal(result.url, '/list?p=2');
+  });
+});
+
+describe('paginate success paths', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+
+  it('collects items from a single page when no next page exists', async () => {
+    const page = createMockPage({
+      url: 'https://example.com/list',
+      items: { '.item': ['Item 1', 'Item 2', 'Item 3'] },
+    });
+
+    const result = await macros['paginate'](page, [], { selector: '.item' }, stubHelpers);
+
+    assert.equal(result.pages, 1);
+    assert.equal(result.totalItems, 3);
+    assert.deepEqual(result.items, ['Item 1', 'Item 2', 'Item 3']);
+    assert.equal(result.hasMore, false);
+    assert.equal(result.startUrl, 'https://example.com/list');
+  });
+
+  it('skips empty and whitespace-only text content items', async () => {
+    const page = createMockPage({
+      url: 'https://example.com/list',
+      items: { '.entry': ['Item 1', '', '   ', 'Item 2'] },
+    });
+
+    const result = await macros['paginate'](page, [], { selector: '.entry' }, stubHelpers);
+
+    assert.equal(result.totalItems, 2);
+    assert.deepEqual(result.items, ['Item 1', 'Item 2']);
+  });
+
+  it('respects --max-items limit', async () => {
+    const page = createMockPage({
+      url: 'https://example.com/list',
+      items: { '.card': ['A', 'B', 'C', 'D', 'E'] },
+    });
+
+    const result = await macros['paginate'](page, [], {
+      selector: '.card',
+      maxItems: '3',
+    }, stubHelpers);
+
+    assert.equal(result.totalItems, 3);
+    assert.deepEqual(result.items, ['A', 'B', 'C']);
+    assert.equal(result.hasMore, true);
+  });
+
+  it('respects --max-pages limit', async () => {
+    // Page has items and a rel="next" link, but max-pages=1 stops after first page
+    const page = createMockPage({
+      url: 'https://example.com/catalog',
+      items: { '.product': ['Prod 1', 'Prod 2'] },
+      relNext: { href: '/catalog?page=2' },
+    });
+
+    const result = await macros['paginate'](page, [], {
+      selector: '.product',
+      maxPages: '1',
+    }, stubHelpers);
+
+    assert.equal(result.pages, 1);
+    assert.equal(result.totalItems, 2);
+    assert.equal(result.hasMore, true);
+  });
+
+  it('paginates across multiple pages with rel="next" links', async () => {
+    // Simulate 3 pages of results. We need to dynamically change what
+    // the page returns as items and pagination links as navigation happens.
+    let pageIndex = 0;
+    const pageData = [
+      { items: ['Page1-A', 'Page1-B'], nextHref: '/list?p=2' },
+      { items: ['Page2-A', 'Page2-B'], nextHref: '/list?p=3' },
+      { items: ['Page3-A'], nextHref: null },
+    ];
+
+    let currentUrl = 'https://example.com/list';
+    const page = {
+      url: () => currentUrl,
+      goto: async (url) => {
+        currentUrl = url;
+        pageIndex++;
+      },
+      locator: (selector) => {
+        const data = pageData[pageIndex];
+        if (!data) {
+          return {
+            count: async () => 0,
+            first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }),
+            all: async () => [],
+          };
+        }
+
+        // Item selector
+        if (selector === '.result') {
+          return {
+            count: async () => data.items.length,
+            all: async () => data.items.map(text => ({ textContent: async () => text })),
+          };
+        }
+
+        // rel="next" selector
+        if (selector.includes('rel="next"')) {
+          if (data.nextHref) {
+            const el = {
+              count: async () => 1,
+              first: () => el,
+              isVisible: async () => true,
+              evaluate: async () => 'a',
+              getAttribute: async (attr) => attr === 'href' ? data.nextHref : null,
+              click: async () => {},
+            };
+            return { count: async () => 1, first: () => el };
+          }
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null }) };
+        }
+
+        // All other selectors (CSS patterns, active page, etc.) - no matches
+        return {
+          count: async () => 0,
+          first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }),
+          all: async () => [],
+        };
+      },
+      getByRole: () => ({
+        count: async () => 0,
+        first: () => ({ count: async () => 0, isVisible: async () => false }),
+      }),
+    };
+
+    const result = await macros['paginate'](page, [], {
+      selector: '.result',
+      maxPages: '5',
+    }, stubHelpers);
+
+    assert.equal(result.pages, 3);
+    assert.equal(result.totalItems, 5);
+    assert.deepEqual(result.items, ['Page1-A', 'Page1-B', 'Page2-A', 'Page2-B', 'Page3-A']);
+    assert.equal(result.hasMore, false);
+    assert.equal(result.startUrl, 'https://example.com/list');
+  });
+
+  it('stops when max-items is reached across pages', async () => {
+    let pageIndex = 0;
+    const pageData = [
+      { items: ['A', 'B', 'C'], nextHref: '/p2' },
+      { items: ['D', 'E', 'F'], nextHref: '/p3' },
+      { items: ['G', 'H'], nextHref: null },
+    ];
+
+    let currentUrl = 'https://example.com/items';
+    const page = {
+      url: () => currentUrl,
+      goto: async (url) => { currentUrl = url; pageIndex++; },
+      locator: (selector) => {
+        const data = pageData[pageIndex];
+        if (!data) {
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+        }
+        if (selector === '.row') {
+          return { all: async () => data.items.map(t => ({ textContent: async () => t })) };
+        }
+        if (selector.includes('rel="next"')) {
+          if (data.nextHref) {
+            const el = { count: async () => 1, first: () => el, isVisible: async () => true, evaluate: async () => 'a', getAttribute: async (a) => a === 'href' ? data.nextHref : null, click: async () => {} };
+            return { count: async () => 1, first: () => el };
+          }
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null }) };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+      },
+      getByRole: () => ({ count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    };
+
+    const result = await macros['paginate'](page, [], {
+      selector: '.row',
+      maxItems: '5',
+      maxPages: '10',
+    }, stubHelpers);
+
+    assert.equal(result.totalItems, 5);
+    assert.deepEqual(result.items, ['A', 'B', 'C', 'D', 'E']);
+    assert.equal(result.hasMore, true);
+    // Should have visited 2 pages (collected 3 on page 1, then 2 more from page 2)
+    assert.equal(result.pages, 2);
+  });
+
+  it('navigates via click when pagination element is a button', async () => {
+    let clickCount = 0;
+    let pageIndex = 0;
+    const pageData = [
+      { items: ['First'], hasNextButton: true },
+      { items: ['Second'], hasNextButton: false },
+    ];
+
+    let currentUrl = 'https://spa.example.com/data';
+    const page = {
+      url: () => currentUrl,
+      goto: async (url) => { currentUrl = url; },
+      locator: (selector) => {
+        const data = pageData[pageIndex];
+        if (!data) {
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+        }
+        if (selector === '.item') {
+          return { all: async () => data.items.map(t => ({ textContent: async () => t })) };
+        }
+        // Return empty for all locator-based heuristics (rel, css, active page)
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+      },
+      getByRole: (role) => {
+        const data = pageData[pageIndex];
+        if (!data || !data.hasNextButton) {
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) };
+        }
+        // Return a button for 'button' role, empty for 'link'
+        if (role === 'link') {
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) };
+        }
+        if (role === 'button') {
+          const el = {
+            count: async () => 1,
+            first: () => el,
+            isVisible: async () => true,
+            evaluate: async () => 'button',
+            getAttribute: async () => null,
+            click: async () => { clickCount++; pageIndex++; },
+          };
+          return { count: async () => 1, first: () => el };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) };
+      },
+    };
+
+    const result = await macros['paginate'](page, [], {
+      selector: '.item',
+      maxPages: '5',
+    }, stubHelpers);
+
+    assert.equal(clickCount, 1, 'should click the next button once');
+    assert.equal(result.pages, 2);
+    assert.deepEqual(result.items, ['First', 'Second']);
+    assert.equal(result.hasMore, false);
+  });
+
+  it('sets hasMore when max-pages is reached with remaining pages', async () => {
+    // 2 pages available but max-pages=2 - after visiting 2 pages and finding
+    // a next link, should mark hasMore=true
+    let pageIndex = 0;
+    const pageData = [
+      { items: ['P1'], nextHref: '/p2' },
+      { items: ['P2'], nextHref: '/p3' },
+    ];
+
+    let currentUrl = 'https://example.com/data';
+    const page = {
+      url: () => currentUrl,
+      goto: async (url) => { currentUrl = url; pageIndex++; },
+      locator: (selector) => {
+        const data = pageData[pageIndex] || pageData[pageData.length - 1];
+        if (selector === '.r') {
+          return { all: async () => data.items.map(t => ({ textContent: async () => t })) };
+        }
+        if (selector.includes('rel="next"')) {
+          if (data.nextHref) {
+            const el = { count: async () => 1, first: () => el, isVisible: async () => true, evaluate: async () => 'a', getAttribute: async (a) => a === 'href' ? data.nextHref : null, click: async () => {} };
+            return { count: async () => 1, first: () => el };
+          }
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null }) };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+      },
+      getByRole: () => ({ count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    };
+
+    const result = await macros['paginate'](page, [], {
+      selector: '.r',
+      maxPages: '2',
+    }, stubHelpers);
+
+    assert.equal(result.pages, 2);
+    assert.equal(result.hasMore, true);
+    assert.deepEqual(result.items, ['P1', 'P2']);
+  });
+
+  it('defaults max-pages to 5 when not specified', async () => {
+    // Provide 7 pages of data but expect only 5 to be visited
+    let pageIndex = 0;
+    const pageData = Array.from({ length: 7 }, (_, i) => ({
+      items: [`Page${i + 1}`],
+      nextHref: i < 6 ? `/p${i + 2}` : null,
+    }));
+
+    let currentUrl = 'https://example.com/long';
+    const page = {
+      url: () => currentUrl,
+      goto: async (url) => { currentUrl = url; pageIndex++; },
+      locator: (selector) => {
+        const data = pageData[pageIndex];
+        if (!data) {
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+        }
+        if (selector === '.x') {
+          return { all: async () => data.items.map(t => ({ textContent: async () => t })) };
+        }
+        if (selector.includes('rel="next"')) {
+          if (data.nextHref) {
+            const el = { count: async () => 1, first: () => el, isVisible: async () => true, evaluate: async () => 'a', getAttribute: async (a) => a === 'href' ? data.nextHref : null, click: async () => {} };
+            return { count: async () => 1, first: () => el };
+          }
+          return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null }) };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+      },
+      getByRole: () => ({ count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    };
+
+    const result = await macros['paginate'](page, [], {
+      selector: '.x',
+    }, stubHelpers);
+
+    assert.equal(result.pages, 5, 'should default to 5 pages');
+    assert.equal(result.hasMore, true);
+    assert.deepEqual(result.items, ['Page1', 'Page2', 'Page3', 'Page4', 'Page5']);
+  });
+
+  it('returns correct startUrl even after multi-page navigation', async () => {
+    let pageIndex = 0;
+    let currentUrl = 'https://example.com/start';
+    const page = {
+      url: () => currentUrl,
+      goto: async (url) => { currentUrl = url; pageIndex++; },
+      locator: (selector) => {
+        if (selector === '.z' && pageIndex === 0) {
+          return { all: async () => [{ textContent: async () => 'Only' }] };
+        }
+        if (selector === '.z') {
+          return { all: async () => [{ textContent: async () => 'Done' }] };
+        }
+        if (selector.includes('rel="next"') && pageIndex === 0) {
+          const el = { count: async () => 1, first: () => el, isVisible: async () => true, evaluate: async () => 'a', getAttribute: async (a) => a === 'href' ? '/page2' : null, click: async () => {} };
+          return { count: async () => 1, first: () => el };
+        }
+        return { count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false, evaluate: async () => null, getAttribute: async () => null, textContent: async () => '' }), all: async () => [] };
+      },
+      getByRole: () => ({ count: async () => 0, first: () => ({ count: async () => 0, isVisible: async () => false }) }),
+    };
+
+    const result = await macros['paginate'](page, [], { selector: '.z' }, stubHelpers);
+
+    assert.equal(result.startUrl, 'https://example.com/start');
+    assert.equal(result.url, '/page2');
+    assert.equal(result.pages, 2);
+  });
+});
