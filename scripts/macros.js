@@ -658,6 +658,308 @@ async function paginate(page, actionArgs, opts, helpers) {
   };
 }
 
+/**
+ * Extract structured data from repeated list items on a page.
+ *
+ * Two modes:
+ *   --selector <sel> [--fields f1,f2,...]  Extract from elements matching a CSS selector
+ *   --auto                                 Auto-detect repeated siblings
+ *
+ * @param {object} page - Playwright page
+ * @param {string[]} actionArgs - positional args (unused)
+ * @param {object} opts - parsed options
+ * @param {object} helpers - macro helpers
+ */
+async function extract(page, actionArgs, opts, helpers) {
+  const hasSelector = !!opts.selector;
+  const hasAuto = !!opts.auto;
+
+  if (!hasSelector && !hasAuto) {
+    throw new Error('Usage: extract --selector <css-selector> [--fields f1,f2,...] [--max-items N]\n  Or:  extract --auto [--max-items N]');
+  }
+  if (hasSelector && hasAuto) {
+    throw new Error('Cannot use both --selector and --auto. Choose one mode.');
+  }
+  if (hasAuto && opts.fields) {
+    throw new Error('--fields is only valid with --selector mode, not --auto.');
+  }
+  if (opts.maxItems != null && isNaN(parseInt(opts.maxItems, 10))) {
+    throw new Error('Invalid --max-items value. Must be a number.');
+  }
+
+  const maxItems = Math.min(Math.max(parseInt(opts.maxItems, 10) || 100, 1), 500);
+  const FIELD_MAX_LEN = 500;
+
+  if (hasSelector) {
+    // Selector mode
+    const fields = opts.fields
+      ? opts.fields.split(',').map(f => f.trim()).filter(Boolean)
+      : ['title', 'url', 'text'];
+
+    const items = await page.$$eval(opts.selector, function extractFields(els, args) {
+      var fieldNames = args[0];
+      var cap = args[1];
+      var maxLen = args[2];
+
+      function truncate(s) {
+        if (typeof s !== 'string') return s;
+        return s.length > maxLen ? s.slice(0, maxLen) : s;
+      }
+
+      function extractField(el, name) {
+        switch (name) {
+          case 'title': {
+            var h = el.querySelector('h1, h2, h3, h4, h5, h6, [class*="title"]');
+            return h ? truncate((h.textContent || '').trim()) : null;
+          }
+          case 'url': {
+            var a = el.querySelector('a[href]');
+            return a ? a.getAttribute('href') : null;
+          }
+          case 'author': {
+            var au = el.querySelector('[class*="author"], [rel="author"]');
+            return au ? truncate((au.textContent || '').trim()) : null;
+          }
+          case 'date': {
+            var t = el.querySelector('time[datetime]');
+            if (t) return t.getAttribute('datetime');
+            var d = el.querySelector('[class*="date"]');
+            return d ? truncate((d.textContent || '').trim()) : null;
+          }
+          case 'tags': {
+            var tagEls = el.querySelectorAll('[class*="tag"]');
+            if (tagEls.length === 0) return null;
+            var arr = [];
+            for (var i = 0; i < tagEls.length && i < 20; i++) {
+              arr.push(truncate((tagEls[i].textContent || '').trim()));
+            }
+            return arr;
+          }
+          case 'text': {
+            return truncate((el.textContent || '').trim());
+          }
+          case 'image': {
+            var img = el.querySelector('img[src]');
+            return img ? img.getAttribute('src') : null;
+          }
+          default: {
+            // Generic: try [class*=name]
+            var gen = el.querySelector('[class*="' + name + '"]');
+            return gen ? truncate((gen.textContent || '').trim()) : null;
+          }
+        }
+      }
+
+      var results = [];
+      for (var i = 0; i < els.length && results.length < cap; i++) {
+        var item = {};
+        for (var j = 0; j < fieldNames.length; j++) {
+          var val = extractField(els[i], fieldNames[j]);
+          if (val != null) item[fieldNames[j]] = val;
+        }
+        if (Object.keys(item).length > 0) results.push(item);
+      }
+      return results;
+    }, [fields, maxItems, FIELD_MAX_LEN]);
+
+    const snapshot = await helpers.getSnapshot(page);
+    return {
+      url: page.url(),
+      mode: 'selector',
+      selector: opts.selector,
+      fields,
+      count: items.length,
+      items,
+      ...(snapshot != null && { snapshot })
+    };
+  }
+
+  // Auto-detect mode - uses page.evaluate with a self-contained function
+  const result = await page.evaluate(function autoDetect(cap) {
+    var FIELD_MAX = 500;
+
+    function truncate(s) {
+      if (typeof s !== 'string') return s;
+      return s.length > FIELD_MAX ? s.slice(0, FIELD_MAX) : s;
+    }
+
+    function getSignature(el) {
+      var children = el.children;
+      var tags = [];
+      for (var i = 0; i < children.length; i++) {
+        tags.push(children[i].tagName);
+      }
+      tags.sort();
+      return tags.join(',');
+    }
+
+    function isContentArea(el) {
+      var node = el;
+      while (node) {
+        var tag = node.tagName ? node.tagName.toLowerCase() : '';
+        if (tag === 'main' || tag === 'article') return true;
+        var role = node.getAttribute ? node.getAttribute('role') : null;
+        if (role === 'main') return true;
+        node = node.parentElement;
+      }
+      return false;
+    }
+
+    function isNavArea(el) {
+      var node = el;
+      while (node) {
+        var tag = node.tagName ? node.tagName.toLowerCase() : '';
+        if (tag === 'nav' || tag === 'header' || tag === 'footer') return true;
+        node = node.parentElement;
+      }
+      return false;
+    }
+
+    // Walk all elements, group siblings by parent + tagName
+    var groups = {};
+    var allElements = document.querySelectorAll('*');
+    for (var i = 0; i < allElements.length; i++) {
+      var el = allElements[i];
+      var parent = el.parentElement;
+      if (!parent) continue;
+      var tag = el.tagName;
+      if (!parent._extractGroupId) {
+        parent._extractGroupId = 'g' + i;
+      }
+      var key = parent._extractGroupId + ':' + tag;
+      if (!groups[key]) {
+        groups[key] = { parent: parent, tag: tag, elements: [] };
+      }
+      groups[key].elements.push(el);
+    }
+
+    // Compute structural signatures and find the best group
+    var bestGroup = null;
+    var bestScore = 0;
+
+    var keys = Object.keys(groups);
+    for (var k = 0; k < keys.length; k++) {
+      var group = groups[keys[k]];
+      if (group.elements.length < 3) continue;
+
+      var sig = getSignature(group.elements[0]);
+      var allSame = true;
+      for (var s = 1; s < group.elements.length; s++) {
+        if (getSignature(group.elements[s]) !== sig) {
+          allSame = false;
+          break;
+        }
+      }
+      if (!allSame) continue;
+
+      var score = group.elements.length;
+      if (isContentArea(group.parent)) score *= 3;
+      if (isNavArea(group.parent)) score *= 0.3;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestGroup = group;
+      }
+    }
+
+    // Cleanup temporary property
+    for (var c = 0; c < allElements.length; c++) {
+      if (allElements[c]._extractGroupId) {
+        delete allElements[c]._extractGroupId;
+      }
+    }
+
+    if (!bestGroup) {
+      return { error: 'No repeated pattern detected on this page.' };
+    }
+
+    // Build a CSS selector for the detected group
+    function buildSelector(parent, tag) {
+      var parts = [];
+      var node = parent;
+      while (node && node !== document.body && node !== document.documentElement) {
+        var nTag = node.tagName.toLowerCase();
+        if (node.id) {
+          parts.unshift('#' + node.id);
+          break;
+        }
+        var cls = '';
+        if (node.className && typeof node.className === 'string') {
+          var classes = node.className.trim().split(/\s+/).slice(0, 2);
+          cls = classes.map(function(c) { return '.' + c; }).join('');
+        }
+        parts.unshift(nTag + cls);
+        node = node.parentElement;
+      }
+      if (parts.length === 0) parts.push('body');
+      parts.push('> ' + tag.toLowerCase());
+      return parts.join(' > ');
+    }
+
+    var detectedSelector = buildSelector(bestGroup.parent, bestGroup.tag);
+
+    // Extract common fields from each element
+    function extractItem(el) {
+      var item = {};
+      var h = el.querySelector('h1, h2, h3, h4, h5, h6, [class*="title"]');
+      if (h) item.title = truncate((h.textContent || '').trim());
+      var a = el.querySelector('a[href]');
+      if (a) item.url = a.getAttribute('href');
+      var au = el.querySelector('[class*="author"], [rel="author"]');
+      if (au) item.author = truncate((au.textContent || '').trim());
+      var t = el.querySelector('time[datetime]');
+      if (t) { item.date = t.getAttribute('datetime'); }
+      else {
+        var d = el.querySelector('[class*="date"]');
+        if (d) item.date = truncate((d.textContent || '').trim());
+      }
+      var img = el.querySelector('img[src]');
+      if (img) item.image = img.getAttribute('src');
+      if (!item.title) {
+        item.text = truncate((el.textContent || '').trim());
+      }
+      return item;
+    }
+
+    var items = [];
+    var els = bestGroup.elements;
+    for (var e = 0; e < els.length && items.length < cap; e++) {
+      var item = extractItem(els[e]);
+      if (Object.keys(item).length > 0) items.push(item);
+    }
+
+    return {
+      items: items,
+      selector: detectedSelector,
+      count: items.length
+    };
+  }, maxItems);
+
+  if (result.error) {
+    throw new Error(result.error);
+  }
+
+  const snapshot = await helpers.getSnapshot(page);
+
+  // Determine which fields were found across items
+  const fieldSet = new Set();
+  for (const item of result.items) {
+    for (const key of Object.keys(item)) {
+      fieldSet.add(key);
+    }
+  }
+
+  return {
+    url: page.url(),
+    mode: 'auto',
+    selector: result.selector,
+    fields: Array.from(fieldSet),
+    count: result.count,
+    items: result.items,
+    ...(snapshot != null && { snapshot })
+  };
+}
+
 const macros = {
   'select-option': selectOption,
   'tab-switch': tabSwitch,
@@ -672,7 +974,8 @@ const macros = {
   'iframe-action': iframeAction,
   'login': login,
   'next-page': nextPage,
-  'paginate': paginate
+  'paginate': paginate,
+  'extract': extract
 };
 
 module.exports = { macros };
