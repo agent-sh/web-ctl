@@ -186,10 +186,9 @@ function compactFormat(snapshot) {
     const content = line.slice(spaces);
 
     // Check if this is a link line with a colon suffix (has children)
-    const linkMatch = content.match(/^- link "(.+)":/);
+    const linkMatch = content.match(/^- link "([^"]+)":/);
     if (linkMatch) {
       const parentDepth = Math.floor(spaces / 2);
-      const childIndent = (parentDepth + 1) * 2;
 
       // Collect children
       const children = [];
@@ -207,11 +206,11 @@ function compactFormat(snapshot) {
 
       // Find /url: child among direct children (depth === parentDepth + 1)
       const urlChildIdx = children.findIndex(c =>
-        c.depth === parentDepth + 1 && c.line.trim().match(/^- \/url: (.+)/)
+        c.depth === parentDepth + 1 && c.line.trim().match(/^- \/url: (\S+)/)
       );
 
       if (urlChildIdx !== -1) {
-        const urlMatch = children[urlChildIdx].line.trim().match(/^- \/url: (.+)/);
+        const urlMatch = children[urlChildIdx].line.trim().match(/^- \/url: (\S+)/);
         const url = urlMatch[1];
         const otherChildren = children.filter((_, idx) => idx !== urlChildIdx);
 
@@ -245,7 +244,7 @@ function compactFormat(snapshot) {
     while (spaces < line.length && line[spaces] === ' ') spaces++;
     const content = line.slice(spaces);
 
-    const headingMatch = content.match(/^- heading "(.+)" \[level=(\d+)\]:/);
+    const headingMatch = content.match(/^- heading "([^"]+)" \[level=(\d+)\]:/);
     if (headingMatch) {
       const parentDepth = Math.floor(spaces / 2);
 
@@ -267,14 +266,14 @@ function compactFormat(snapshot) {
       const directChildren = children.filter(c => c.depth === parentDepth + 1);
       if (directChildren.length === 1) {
         const childContent = directChildren[0].line.trim();
-        const linkArrowMatch = childContent.match(/^- link "(.+)" -> (.+)$/);
+        const linkArrowMatch = childContent.match(/^- link "([^"]+)" -> (\S+)$/);
         if (linkArrowMatch) {
           // heading + link -> url: merge into one line
           headingInlined.push(`${' '.repeat(spaces)}- heading [h${headingMatch[2]}] "${headingMatch[1]}" -> ${linkArrowMatch[2]}`);
           i = j;
           continue;
         }
-        const linkPlainMatch = childContent.match(/^- link "(.+)"$/);
+        const linkPlainMatch = childContent.match(/^- link "([^"]+)"$/);
         if (linkPlainMatch) {
           // heading + plain link (no url): inline
           headingInlined.push(`${' '.repeat(spaces)}- heading [h${headingMatch[2]}] "${headingMatch[1]}"`);
@@ -299,7 +298,7 @@ function compactFormat(snapshot) {
     while (spaces < line.length && line[spaces] === ' ') spaces++;
     const content = line.slice(spaces);
 
-    const imgMatch = content.match(/^- img(?:\s+"(.*)")?/);
+    const imgMatch = content.match(/^- img(?:\s+"([^"]*)")?/);
     if (imgMatch) {
       const altText = imgMatch[1] || '';
       if (altText.length <= 1) {

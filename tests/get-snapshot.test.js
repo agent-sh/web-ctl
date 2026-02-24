@@ -219,7 +219,7 @@ function compactFormat(snapshot) {
     while (spaces < line.length && line[spaces] === ' ') spaces++;
     const content = line.slice(spaces);
 
-    const linkMatch = content.match(/^- link "(.+)":/);
+    const linkMatch = content.match(/^- link "([^"]+)":/);
     if (linkMatch) {
       const parentDepth = Math.floor(spaces / 2);
 
@@ -237,11 +237,11 @@ function compactFormat(snapshot) {
       }
 
       const urlChildIdx = children.findIndex(c =>
-        c.depth === parentDepth + 1 && c.line.trim().match(/^- \/url: (.+)/)
+        c.depth === parentDepth + 1 && c.line.trim().match(/^- \/url: (\S+)/)
       );
 
       if (urlChildIdx !== -1) {
-        const urlMatch = children[urlChildIdx].line.trim().match(/^- \/url: (.+)/);
+        const urlMatch = children[urlChildIdx].line.trim().match(/^- \/url: (\S+)/);
         const url = urlMatch[1];
         const otherChildren = children.filter((_, idx) => idx !== urlChildIdx);
 
@@ -272,7 +272,7 @@ function compactFormat(snapshot) {
     while (spaces < line.length && line[spaces] === ' ') spaces++;
     const content = line.slice(spaces);
 
-    const headingMatch = content.match(/^- heading "(.+)" \[level=(\d+)\]:/);
+    const headingMatch = content.match(/^- heading "([^"]+)" \[level=(\d+)\]:/);
     if (headingMatch) {
       const parentDepth = Math.floor(spaces / 2);
 
@@ -292,13 +292,13 @@ function compactFormat(snapshot) {
       const directChildren = children.filter(c => c.depth === parentDepth + 1);
       if (directChildren.length === 1) {
         const childContent = directChildren[0].line.trim();
-        const linkArrowMatch = childContent.match(/^- link "(.+)" -> (.+)$/);
+        const linkArrowMatch = childContent.match(/^- link "([^"]+)" -> (\S+)$/);
         if (linkArrowMatch) {
           headingInlined.push(`${' '.repeat(spaces)}- heading [h${headingMatch[2]}] "${headingMatch[1]}" -> ${linkArrowMatch[2]}`);
           i = j;
           continue;
         }
-        const linkPlainMatch = childContent.match(/^- link "(.+)"$/);
+        const linkPlainMatch = childContent.match(/^- link "([^"]+)"$/);
         if (linkPlainMatch) {
           headingInlined.push(`${' '.repeat(spaces)}- heading [h${headingMatch[2]}] "${headingMatch[1]}"`);
           i = j;
@@ -321,7 +321,7 @@ function compactFormat(snapshot) {
     while (spaces < line.length && line[spaces] === ' ') spaces++;
     const content = line.slice(spaces);
 
-    const imgMatch = content.match(/^- img(?:\s+"(.*)")?/);
+    const imgMatch = content.match(/^- img(?:\s+"([^"]*)")?/);
     if (imgMatch) {
       const altText = imgMatch[1] || '';
       if (altText.length <= 1) {
@@ -598,6 +598,44 @@ describe('compactFormat', () => {
     assert.ok(!result.includes('img "x"'), 'single char alt img removed');
     assert.ok(result.includes('img "Team photo"'), 'meaningful alt preserved');
     assert.ok(result.includes('paragraph "Hello world"'));
+  });
+
+  // --- Edge cases ---
+
+  it('handles blank lines in input', () => {
+    const input = [
+      '- link "Home":',
+      '  - /url: /home',
+      '',
+      '- link "About":',
+      '  - /url: /about'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(result.includes('- link "Home" -> /home'));
+    assert.ok(result.includes('- link "About" -> /about'));
+  });
+
+  it('link collapse feeds into heading inline', () => {
+    // Pass 1 collapses link, Pass 2 inlines heading with the collapsed link
+    const input = [
+      '- heading "Docs" [level=2]:',
+      '  - link "Docs":',
+      '    - /url: /docs'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.equal(result, '- heading [h2] "Docs" -> /docs');
+  });
+
+  it('deduplicates URLs produced by link collapsing', () => {
+    const input = [
+      '- link "Home":',
+      '  - /url: /home',
+      '- link "Home link":',
+      '  - /url: /home'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(result.includes('- link "Home" -> /home'));
+    assert.ok(!result.includes('Home link'), 'duplicate URL removed after collapse');
   });
 });
 
