@@ -107,6 +107,35 @@ describe('redactSecrets', () => {
     const text = 'Hello, this is normal text with no secrets.';
     assert.equal(redactSecrets(text), text);
   });
+
+  it('redacts actual URL credentials', () => {
+    const result = redactSecrets('https://user:password@host.com/path');
+    assert.equal(result, 'https://[REDACTED]:[REDACTED]@host.com/path');
+  });
+
+  it('redacts OAuth tokens in URLs', () => {
+    const result = redactSecrets('https://oauth2:ghp_token123456@github.com/repo');
+    assert.equal(result, 'https://[REDACTED]:[REDACTED]@github.com/repo');
+  });
+
+  it('preserves public URLs with ports', () => {
+    const url = 'https://github.com:443/users/someone';
+    assert.equal(redactSecrets(url), url);
+  });
+
+  it('preserves public URLs when email exists nearby', () => {
+    const text = 'Visit https://example.com/path and contact user@example.com';
+    assert.equal(redactSecrets(text), text);
+  });
+
+  it('preserves multiline ARIA snapshots', () => {
+    const text = [
+      'link "Home" https://example.com/home',
+      'link "About" https://example.com/about',
+      'text "Contact us @ support"',
+    ].join('\n');
+    assert.equal(redactSecrets(text), text);
+  });
 });
 
 describe('wrapOutput', () => {

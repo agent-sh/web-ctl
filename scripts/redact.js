@@ -69,7 +69,7 @@ function redactSecrets(text) {
   result = result.replace(/(secret[=:]\s*)[A-Za-z0-9\-._]{8,}/gi, '$1[REDACTED]');
   result = result.replace(/(password[=:]\s*)[^\s&]{4,}/gi, '$1[REDACTED]');
   // Redact basic auth in URLs (user:pass@host)
-  result = result.replace(/:\/\/([^:]+):([^@]{4,})@/g, '://[REDACTED]:[REDACTED]@');
+  result = result.replace(/:\/\/([^/:@\s]+):([^/@\s]{4,})@/g, '://[REDACTED]:[REDACTED]@');
 
   return result;
 }
