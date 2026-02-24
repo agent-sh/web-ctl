@@ -434,6 +434,200 @@ async function login(page, actionArgs, opts, helpers) {
   return { url: page.url(), loggedIn: true, snapshot };
 }
 
+/**
+ * Detect a pagination link or button on the page.
+ * Tries multiple heuristics in priority order:
+ *   1. rel="next" links
+ *   2. ARIA role links/buttons with common next-page text
+ *   3. CSS class patterns (.pagination .next, aria-label, etc.)
+ *   4. Current-page number + 1 within a pagination container
+ *
+ * @param {object} page - Playwright page
+ * @param {string} direction - 'next' (only 'next' is supported currently)
+ * @returns {{ element, href, method }|null}
+ */
+async function detectPaginationLink(page, direction = 'next') {
+  // Heuristic 1: rel="next" links
+  const relNext = page.locator('a[rel="next"], link[rel="next"]');
+  if (await relNext.count() > 0) {
+    const first = relNext.first();
+    const tagName = await first.evaluate(el => el.tagName.toLowerCase()).catch(() => 'link');
+    if (tagName === 'a') {
+      if (await first.isVisible().catch(() => false)) {
+        const href = await first.getAttribute('href').catch(() => null);
+        return { element: first, href, method: 'rel-next' };
+      }
+    } else {
+      // <link rel="next"> - extract href for goto
+      const href = await first.getAttribute('href').catch(() => null);
+      if (href) {
+        return { element: first, href, method: 'rel-next-link' };
+      }
+    }
+  }
+
+  // Heuristic 2: role-based links/buttons with common next-page text
+  const nextPatterns = /^(Next|Next page|>|>>|\u203A|\u00BB)$/i;
+  for (const role of ['link', 'button']) {
+    const candidates = page.getByRole(role, { name: nextPatterns });
+    if (await candidates.count() > 0) {
+      const first = candidates.first();
+      if (await first.isVisible().catch(() => false)) {
+        const href = role === 'link' ? await first.getAttribute('href').catch(() => null) : null;
+        return { element: first, href, method: 'role-text' };
+      }
+    }
+  }
+
+  // Heuristic 3: CSS class and aria-label patterns
+  const cssPatterns = page.locator(
+    '.pagination a.next, .pagination .next a, .pager-next a, ' +
+    'a[aria-label*="next" i], button[aria-label*="next" i], ' +
+    '[class*="pagination"] [class*="next"] a'
+  );
+  if (await cssPatterns.count() > 0) {
+    const first = cssPatterns.first();
+    if (await first.isVisible().catch(() => false)) {
+      const href = await first.getAttribute('href').catch(() => null);
+      return { element: first, href, method: 'css-pattern' };
+    }
+  }
+
+  // Heuristic 4: Current page number N -> find link/button with text N+1
+  const activePage = page.locator('[aria-current="page"], .pagination .active, .page-item.active');
+  if (await activePage.count() > 0) {
+    const activeText = await activePage.first().textContent().catch(() => '');
+    const currentNum = parseInt((activeText || '').trim(), 10);
+    if (!isNaN(currentNum)) {
+      const nextNum = String(currentNum + 1);
+      // Look within pagination container
+      const paginationContainer = page.locator('.pagination, [role="navigation"], nav[aria-label*="pag" i]');
+      if (await paginationContainer.count() > 0) {
+        const container = paginationContainer.first();
+        for (const role of ['link', 'button']) {
+          const numLink = container.getByRole(role, { name: nextNum, exact: true });
+          if (await numLink.count() > 0) {
+            const el = numLink.first();
+            if (await el.isVisible().catch(() => false)) {
+              const href = role === 'link' ? await el.getAttribute('href').catch(() => null) : null;
+              return { element: el, href, method: 'page-number' };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+async function nextPage(page, actionArgs, opts, helpers) {
+  const result = await detectPaginationLink(page, 'next');
+  if (!result) {
+    throw new Error('No pagination controls detected. The page may not have pagination or uses an unsupported pattern.');
+  }
+
+  const previousUrl = page.url();
+
+  // Prefer goto for clean navigation when href is available on a link
+  if (result.href && result.method !== 'role-text') {
+    await page.goto(result.href, { waitUntil: 'domcontentloaded', timeout: 10000 });
+  } else if (result.href && result.element) {
+    // For role-text links with href, try goto first
+    const tagName = await result.element.evaluate(el => el.tagName.toLowerCase()).catch(() => '');
+    if (tagName === 'a') {
+      await page.goto(result.href, { waitUntil: 'domcontentloaded', timeout: 10000 });
+    } else {
+      await result.element.click({ timeout: 10000 });
+    }
+  } else {
+    await result.element.click({ timeout: 10000 });
+  }
+
+  await helpers.waitForStable(page, { timeout: 10000 });
+  const snapshot = await helpers.getSnapshot(page);
+  return { url: page.url(), previousUrl, nextPageDetected: result.method, snapshot };
+}
+
+async function paginate(page, actionArgs, opts, helpers) {
+  if (!opts.selector) {
+    throw new Error('Usage: paginate --selector <css-selector> [--max-pages N] [--max-items N]');
+  }
+
+  if (opts.maxPages != null && isNaN(parseInt(opts.maxPages, 10))) {
+    throw new Error('Invalid --max-pages value. Must be a number.');
+  }
+  if (opts.maxItems != null && isNaN(parseInt(opts.maxItems, 10))) {
+    throw new Error('Invalid --max-items value. Must be a number.');
+  }
+
+  const maxPages = Math.min(Math.max(parseInt(opts.maxPages, 10) || 5, 1), 20);
+  const maxItems = Math.min(Math.max(parseInt(opts.maxItems, 10) || 100, 1), 500);
+
+  const startUrl = page.url();
+  const allItems = [];
+  let pagesVisited = 0;
+  let hasMore = false;
+
+  for (let i = 0; i < maxPages; i++) {
+    pagesVisited++;
+
+    // Extract items from current page
+    const elements = await page.locator(opts.selector).all();
+    for (const el of elements) {
+      const text = (await el.textContent() || '').trim();
+      if (text) {
+        allItems.push(text);
+      }
+    }
+
+    // Check item limit
+    if (allItems.length >= maxItems) {
+      allItems.length = maxItems;
+      hasMore = true;
+      break;
+    }
+
+    // Detect next page
+    const next = await detectPaginationLink(page, 'next');
+    if (!next) {
+      break;
+    }
+
+    // If this is the last allowed page, mark hasMore and stop
+    if (pagesVisited === maxPages) {
+      hasMore = true;
+      break;
+    }
+
+    // Navigate to next page
+    if (next.href && next.element) {
+      const tagName = await next.element.evaluate(el => el.tagName.toLowerCase()).catch(() => '');
+      if (tagName === 'a' || next.method === 'rel-next-link') {
+        await page.goto(next.href, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      } else {
+        await next.element.click({ timeout: 10000 });
+      }
+    } else if (next.element) {
+      await next.element.click({ timeout: 10000 });
+    }
+
+    await helpers.randomDelay();
+    await helpers.waitForStable(page, { timeout: 10000 });
+  }
+
+  const snapshot = await helpers.getSnapshot(page);
+  return {
+    url: page.url(),
+    startUrl,
+    pages: pagesVisited,
+    totalItems: allItems.length,
+    items: allItems,
+    hasMore,
+    snapshot
+  };
+}
+
 const macros = {
   'select-option': selectOption,
   'tab-switch': tabSwitch,
@@ -446,7 +640,9 @@ const macros = {
   'scroll-to': scrollTo,
   'wait-toast': waitToast,
   'iframe-action': iframeAction,
-  'login': login
+  'login': login,
+  'next-page': nextPage,
+  'paginate': paginate
 };
 
 module.exports = { macros };

@@ -5,16 +5,17 @@ const assert = require('node:assert/strict');
 const { macros } = require('../scripts/macros');
 
 describe('macros exports', () => {
-  it('exports all 12 macros', () => {
+  it('exports all 14 macros', () => {
     const expected = [
       'select-option', 'tab-switch', 'modal-dismiss', 'form-fill',
       'search-select', 'date-pick', 'file-upload', 'hover-reveal',
-      'scroll-to', 'wait-toast', 'iframe-action', 'login'
+      'scroll-to', 'wait-toast', 'iframe-action', 'login',
+      'next-page', 'paginate'
     ];
     for (const name of expected) {
       assert.equal(typeof macros[name], 'function', `macro "${name}" should be a function`);
     }
-    assert.equal(Object.keys(macros).length, 12, 'should have exactly 12 macros');
+    assert.equal(Object.keys(macros).length, 14, 'should have exactly 14 macros');
   });
 });
 
@@ -251,6 +252,74 @@ describe('wait-toast detection', () => {
     await assert.rejects(
       () => macros['wait-toast'](page, [], { timeout: '100' }, stubHelpers),
       /Timeout/
+    );
+  });
+});
+
+describe('next-page detection', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+
+  it('next-page throws when no pagination detected', async () => {
+    const noPageStub = {
+      locator: () => ({
+        count: async () => 0,
+        first: () => ({
+          count: async () => 0,
+          isVisible: async () => false,
+          evaluate: async () => 'div',
+          getAttribute: async () => null,
+          textContent: async () => ''
+        })
+      }),
+      getByRole: () => ({
+        count: async () => 0,
+        first: () => ({
+          count: async () => 0,
+          isVisible: async () => false
+        })
+      })
+    };
+    await assert.rejects(
+      () => macros['next-page'](noPageStub, [], {}, stubHelpers),
+      /No pagination/
+    );
+  });
+});
+
+describe('paginate validation', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+  const stubPage = {};
+
+  it('paginate requires --selector', async () => {
+    await assert.rejects(
+      () => macros['paginate'](stubPage, [], {}, stubHelpers),
+      /Usage: paginate/
+    );
+  });
+
+  it('paginate rejects non-numeric --max-pages', async () => {
+    await assert.rejects(
+      () => macros['paginate'](stubPage, [], { selector: '.item', maxPages: 'abc' }, stubHelpers),
+      /Invalid --max-pages/
+    );
+  });
+
+  it('paginate rejects non-numeric --max-items', async () => {
+    await assert.rejects(
+      () => macros['paginate'](stubPage, [], { selector: '.item', maxItems: 'abc' }, stubHelpers),
+      /Invalid --max-items/
     );
   });
 });
