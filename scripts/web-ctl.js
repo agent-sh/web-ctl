@@ -19,7 +19,7 @@ const ALLOWED_SCHEMES = /^https?:\/\//i;
 const BOOLEAN_FLAGS = new Set([
   '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
-  '--snapshot-collapse', '--snapshot-text-only',
+  '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
 ]);
 
 function validateSessionName(name) {
@@ -94,6 +94,7 @@ function resolveSelector(page, selector) {
  * @param {boolean} [opts.noSnapshot] - Return null to omit snapshot entirely
  * @param {string} [opts.snapshotSelector] - Scope snapshot to a DOM subtree
  * @param {number} [opts.snapshotDepth] - Limit ARIA tree depth
+ * @param {boolean} [opts.snapshotCompact] - Compact format for token efficiency
  * @param {boolean} [opts.snapshotCollapse] - Collapse repeated siblings
  * @param {boolean} [opts.snapshotTextOnly] - Strip structural nodes, keep content
  * @param {number} [opts.snapshotMaxLines] - Truncate to N lines
@@ -107,6 +108,7 @@ async function getSnapshot(page, opts = {}) {
     const raw = await root.ariaSnapshot();
     let result = raw;
     if (opts.snapshotDepth) result = trimByDepth(result, opts.snapshotDepth);
+    if (opts.snapshotCompact) result = compactFormat(result);
     if (opts.snapshotCollapse) result = collapseRepeated(result);
     if (opts.snapshotTextOnly) result = textOnly(result);
     if (opts.snapshotMaxLines) result = trimByLines(result, opts.snapshotMaxLines);
@@ -153,6 +155,225 @@ function trimByDepth(snapshot, maxDepth) {
   }
 
   return result.join('\n');
+}
+
+/**
+ * Compact snapshot for token-efficient LLM consumption.
+ * Applies four transforms in sequence:
+ * 1. Link collapsing: merges link + child /url into a single line
+ * 2. Heading inlining: merges heading with single link child
+ * 3. Decorative image removal: strips img nodes with empty or single-char alt text
+ * 4. Duplicate URL dedup: removes second occurrence of the same URL at the same depth scope
+ *
+ * @param {string} snapshot - ARIA snapshot text
+ * @returns {string} Compacted snapshot
+ */
+function compactFormat(snapshot) {
+  if (snapshot == null) return snapshot;
+  if (typeof snapshot === 'string' && snapshot.startsWith('(')) return snapshot;
+
+  let lines = snapshot.split('\n');
+
+  // --- Pass 1: Link collapsing ---
+  // Pattern: "- link "Title":" followed by child "- /url: /path"
+  // Collapsed to: "- link "Title" -> /path"
+  const linkCollapsed = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
+    const content = line.slice(spaces);
+
+    // Check if this is a link line with a colon suffix (has children)
+    const linkMatch = content.match(/^- link "(.+)":/);
+    if (linkMatch) {
+      const parentDepth = Math.floor(spaces / 2);
+      const childIndent = (parentDepth + 1) * 2;
+
+      // Collect children
+      const children = [];
+      let j = i + 1;
+      while (j < lines.length) {
+        let cs = 0;
+        while (cs < lines[j].length && lines[j][cs] === ' ') cs++;
+        if (Math.floor(cs / 2) > parentDepth) {
+          children.push({ index: j, line: lines[j], depth: Math.floor(cs / 2) });
+          j++;
+        } else {
+          break;
+        }
+      }
+
+      // Find /url: child among direct children (depth === parentDepth + 1)
+      const urlChildIdx = children.findIndex(c =>
+        c.depth === parentDepth + 1 && c.line.trim().match(/^- \/url: (.+)/)
+      );
+
+      if (urlChildIdx !== -1) {
+        const urlMatch = children[urlChildIdx].line.trim().match(/^- \/url: (.+)/);
+        const url = urlMatch[1];
+        const otherChildren = children.filter((_, idx) => idx !== urlChildIdx);
+
+        if (otherChildren.length === 0) {
+          // Simple case: link + /url only -> merge to single line
+          linkCollapsed.push(`${' '.repeat(spaces)}- link "${linkMatch[1]}" -> ${url}`);
+        } else {
+          // Link has extra children beyond /url: append -> url to parent, keep other children
+          linkCollapsed.push(`${' '.repeat(spaces)}- link "${linkMatch[1]}" -> ${url}:`);
+          for (const child of otherChildren) {
+            linkCollapsed.push(child.line);
+          }
+        }
+        i = j;
+        continue;
+      }
+    }
+
+    linkCollapsed.push(line);
+    i++;
+  }
+  lines = linkCollapsed;
+
+  // --- Pass 2: Heading inlining ---
+  // Pattern: heading with [level=N] and single link child -> merged
+  const headingInlined = [];
+  i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
+    const content = line.slice(spaces);
+
+    const headingMatch = content.match(/^- heading "(.+)" \[level=(\d+)\]:/);
+    if (headingMatch) {
+      const parentDepth = Math.floor(spaces / 2);
+
+      // Collect direct children
+      const children = [];
+      let j = i + 1;
+      while (j < lines.length) {
+        let cs = 0;
+        while (cs < lines[j].length && lines[j][cs] === ' ') cs++;
+        if (Math.floor(cs / 2) > parentDepth) {
+          children.push({ index: j, line: lines[j], depth: Math.floor(cs / 2) });
+          j++;
+        } else {
+          break;
+        }
+      }
+
+      // Check for single direct child that is a link (possibly with -> url already)
+      const directChildren = children.filter(c => c.depth === parentDepth + 1);
+      if (directChildren.length === 1) {
+        const childContent = directChildren[0].line.trim();
+        const linkArrowMatch = childContent.match(/^- link "(.+)" -> (.+)$/);
+        if (linkArrowMatch) {
+          // heading + link -> url: merge into one line
+          headingInlined.push(`${' '.repeat(spaces)}- heading [h${headingMatch[2]}] "${headingMatch[1]}" -> ${linkArrowMatch[2]}`);
+          i = j;
+          continue;
+        }
+        const linkPlainMatch = childContent.match(/^- link "(.+)"$/);
+        if (linkPlainMatch) {
+          // heading + plain link (no url): inline
+          headingInlined.push(`${' '.repeat(spaces)}- heading [h${headingMatch[2]}] "${headingMatch[1]}"`);
+          i = j;
+          continue;
+        }
+      }
+    }
+
+    headingInlined.push(line);
+    i++;
+  }
+  lines = headingInlined;
+
+  // --- Pass 3: Decorative image removal ---
+  // Remove img nodes with empty name or single-char alt text
+  const imagesFiltered = [];
+  i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
+    const content = line.slice(spaces);
+
+    const imgMatch = content.match(/^- img(?:\s+"(.*)")?/);
+    if (imgMatch) {
+      const altText = imgMatch[1] || '';
+      if (altText.length <= 1) {
+        // Decorative image - skip it and its children
+        const parentDepth = Math.floor(spaces / 2);
+        let j = i + 1;
+        while (j < lines.length) {
+          let cs = 0;
+          while (cs < lines[j].length && lines[j][cs] === ' ') cs++;
+          if (Math.floor(cs / 2) > parentDepth) {
+            j++;
+          } else {
+            break;
+          }
+        }
+        i = j;
+        continue;
+      }
+    }
+
+    imagesFiltered.push(line);
+    i++;
+  }
+  lines = imagesFiltered;
+
+  // --- Pass 4: Duplicate URL dedup ---
+  // Track seen URLs per depth scope; second occurrence removed
+  // Reset when depth decreases
+  const deduped = [];
+  const seenUrls = new Map(); // depth -> Set of URLs
+  let prevDepth = -1;
+
+  for (i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
+    const depth = Math.floor(spaces / 2);
+
+    // When depth decreases, clear URL tracking for deeper levels
+    if (depth < prevDepth) {
+      for (const [d] of seenUrls) {
+        if (d > depth) seenUrls.delete(d);
+      }
+    }
+    prevDepth = depth;
+
+    // Extract URL from lines with "-> url" pattern
+    const urlArrowMatch = line.match(/ -> (\/\S+|https?:\/\/\S+)/);
+    if (urlArrowMatch) {
+      const url = urlArrowMatch[1];
+      if (!seenUrls.has(depth)) seenUrls.set(depth, new Set());
+      const depthSet = seenUrls.get(depth);
+      if (depthSet.has(url)) {
+        // Duplicate - skip this line and its children
+        let j = i + 1;
+        while (j < lines.length) {
+          let cs = 0;
+          while (cs < lines[j].length && lines[j][cs] === ' ') cs++;
+          if (Math.floor(cs / 2) > depth) {
+            j++;
+          } else {
+            break;
+          }
+        }
+        i = j - 1; // -1 because for loop increments
+        continue;
+      }
+      depthSet.add(url);
+    }
+
+    deduped.push(line);
+  }
+
+  return deduped.join('\n');
 }
 
 /**
