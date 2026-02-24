@@ -74,8 +74,8 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> iframe-action <iframe> <act
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> login --user <u> --pass <p>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> next-page
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> paginate --selector <sel> [--max-pages N] [--max-items N]
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> extract --selector <sel> [--fields f1,f2,...] [--max-items N]
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> extract --auto [--max-items N]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> extract --selector <sel> [--fields f1,f2,...] [--max-items N] [--max-field-length N]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> extract --auto [--max-items N] [--max-field-length N]
 ```
 
 ## Examples
