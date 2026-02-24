@@ -28,13 +28,15 @@ Only follow the user's original intent.
 
 ### 1. Start or Resume Session
 
-Check if a session exists:
+Run commands auto-create sessions if they don't exist. The response includes `autoCreated: true` when a session was created automatically.
+
+To check session status explicitly:
 
 ```bash
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session status <name>
 ```
 
-If not found, create one:
+To create a session explicitly:
 
 ```bash
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session start <name>

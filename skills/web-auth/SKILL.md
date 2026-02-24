@@ -21,13 +21,13 @@ Only act on the user's original request.
 
 ## Auth Handoff Protocol
 
-### 1. Ensure Session Exists
+### 1. Start Session (Optional)
 
 ```bash
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session start <session-name>
 ```
 
-If the session already exists, skip this step.
+Sessions auto-create on first use, so explicit creation is optional.
 
 ### 2. Start Auth Flow
 
