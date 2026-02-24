@@ -1474,6 +1474,45 @@ describe('extract selector mode', () => {
     assert.equal(result.url, 'https://example.com/products');
     assert.equal(result.snapshot, '(stub)');
   });
+
+  it('extracts column_N fields from table rows', async () => {
+    const page = {
+      url: () => 'https://example.com/table',
+      $$eval: async (sel, fn, ...args) => fn(
+        [{
+          children: [
+            { tagName: 'TD', textContent: 'Alice' },
+            { tagName: 'TD', textContent: 'Admin' },
+          ],
+          querySelector: () => null,
+        }, {
+          children: [
+            { tagName: 'TD', textContent: 'Bob' },
+            { tagName: 'TD', textContent: 'User' },
+          ],
+          querySelector: () => null,
+        }, {
+          children: [
+            { tagName: 'TD', textContent: 'Carol' },
+            { tagName: 'TD', textContent: 'Mod' },
+          ],
+          querySelector: () => null,
+        }],
+        ...args
+      ),
+    };
+
+    const result = await macros['extract'](page, [], {
+      selector: 'table tr',
+      fields: 'column_1,column_2',
+    }, stubHelpers);
+
+    assert.equal(result.mode, 'selector');
+    assert.equal(result.count, 3);
+    assert.equal(result.items[0].column_1, 'Alice');
+    assert.equal(result.items[0].column_2, 'Admin');
+    assert.equal(result.items[1].column_1, 'Bob');
+  });
 });
 
 describe('extract auto-detect mode', () => {
@@ -1602,14 +1641,14 @@ describe('extract auto-detect table mode', () => {
     assert.ok(result.fields.includes('Integrations'));
   });
 
-  it('falls back to generic extraction when table has no headers', async () => {
+  it('extracts column-indexed fields when table has no headers', async () => {
     const page = {
       url: () => 'https://example.com/data',
       evaluate: async () => ({
         items: [
-          { text: 'row 1 cell A row 1 cell B' },
-          { text: 'row 2 cell A row 2 cell B' },
-          { text: 'row 3 cell A row 3 cell B' },
+          { column_1: 'row 1 cell A', column_2: 'row 1 cell B' },
+          { column_1: 'row 2 cell A', column_2: 'row 2 cell B' },
+          { column_1: 'row 3 cell A', column_2: 'row 3 cell B' },
         ],
         selector: 'table > tbody > tr',
         count: 3,
@@ -1620,8 +1659,33 @@ describe('extract auto-detect table mode', () => {
 
     assert.equal(result.mode, 'auto');
     assert.equal(result.count, 3);
-    assert.ok(result.items[0].text, 'should have text field for headerless table');
-    assert.ok(result.fields.includes('text'));
+    assert.equal(result.items[0].column_1, 'row 1 cell A');
+    assert.equal(result.items[0].column_2, 'row 1 cell B');
+    assert.ok(result.fields.includes('column_1'));
+    assert.ok(result.fields.includes('column_2'));
+  });
+
+  it('headerless table includes url when link present', async () => {
+    const page = {
+      url: () => 'https://example.com/links-no-headers',
+      evaluate: async () => ({
+        items: [
+          { column_1: 'Alpha', column_2: 'First', url: '/items/alpha' },
+          { column_1: 'Beta', column_2: 'Second', url: '/items/beta' },
+          { column_1: 'Gamma', column_2: 'Third', url: '/items/gamma' },
+        ],
+        selector: 'table > tbody > tr',
+        count: 3,
+      }),
+    };
+
+    const result = await macros['extract'](page, [], { auto: true }, stubHelpers);
+
+    assert.equal(result.count, 3);
+    assert.equal(result.items[0].column_1, 'Alpha');
+    assert.equal(result.items[0].url, '/items/alpha');
+    assert.ok(result.fields.includes('column_1'));
+    assert.ok(result.fields.includes('url'));
   });
 
   it('ignores extra cells beyond header count', async () => {
