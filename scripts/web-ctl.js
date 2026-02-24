@@ -427,8 +427,10 @@ async function runAction(sessionName, action, actionArgs, opts) {
     try {
       session = sessionStore.createSession(sessionName);
       autoCreated = true;
-    } catch {
-      session = sessionStore.getSession(sessionName);
+    } catch (err) {
+      if (err.message && err.message.includes('already exists')) {
+        session = sessionStore.getSession(sessionName);
+      }
       if (!session) {
         output({ ok: false, command: `run ${action}`, session: sessionName, error: 'session_not_found', message: `Session "${sessionName}" not found` });
         return;

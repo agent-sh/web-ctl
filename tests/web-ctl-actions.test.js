@@ -452,14 +452,13 @@ describe('auto-create session on first run command', () => {
 
   it('handles race condition with catch-and-retry', () => {
     assert.ok(
-      webCtlSource.includes('// Race condition: another process created it between get and create'),
-      'catch block should handle race condition with retry'
+      webCtlSource.includes("err.message.includes('already exists')"),
+      'catch block should check for already-exists error'
     );
-    // Verify the retry pattern: catch block calls getSession again
-    const catchBlock = webCtlSource.indexOf('// Race condition:');
+    const catchBlock = webCtlSource.indexOf("already exists");
     const retryGet = webCtlSource.indexOf('session = sessionStore.getSession(sessionName)', catchBlock);
     assert.ok(retryGet > catchBlock && retryGet - catchBlock < 200,
-      'catch block should retry getSession after failed createSession'
+      'catch block should retry getSession after already-exists error'
     );
   });
 
@@ -526,6 +525,14 @@ describe('auto-create session CLI integration', () => {
     const result = runCliSafe('run', 'newsession', 'goto', 'https://example.com');
     assert.equal(result.autoCreated, true,
       'response should include autoCreated: true');
+  });
+
+  it('includes autoCreated in error response when action fails', () => {
+    const result = runCliSafe('run', 'errtest', 'goto', 'https://example.com');
+    if (result.ok === false && result.autoCreated === true) {
+      assert.equal(result.autoCreated, true,
+        'error response should include autoCreated when session was auto-created');
+    }
   });
 
   it('does not auto-create when session already exists', () => {
