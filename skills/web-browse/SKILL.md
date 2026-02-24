@@ -312,6 +312,20 @@ All errors include a `suggestion` field with actionable next steps and a `snapsh
 | `session_expired` | Session TTL exceeded | Create new session and re-authenticate |
 | `action_error` | Other Playwright error | Check suggestion field |
 
+### Bot Detection Recovery (MANDATORY)
+
+When `goto` returns a Cloudflare challenge, CAPTCHA, or any bot detection page (look for "security verification", "checking your browser", status 403), you MUST use `checkpoint` to let the user solve it in a headed browser. Then continue with the original task.
+
+```bash
+# 1. goto returns bot detection page
+# 2. Use checkpoint to let user solve it
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> checkpoint
+# 3. After user solves, continue normally
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot
+```
+
+NEVER silently fall back to an alternative method (APIs, WebFetch, etc.) when the user asked to use web-ctl. The user invoked this tool for a reason.
+
 Example recovery flow:
 
 ```bash
