@@ -24,6 +24,8 @@
 - `--max-field-length <N>` flag for `extract` macro to configure maximum characters per extracted field (default: 500, max: 2000)
 
 ### Fixed
+- `extract` auto-detect `buildSelector` no longer produces double ` > > ` combinators in CSS selectors (#52)
+- `extract` auto-detect `buildSelector` skips auto-generated IDs (numeric, hex strings, framework prefixes like `ext-`, `ember`, `ng-`, patterns with `:` or `.`) and anchors on stable human-readable IDs instead, making detected selectors reusable across page reloads (#52)
 - Auth success detection no longer triggers false positives when the login page URL matches the successUrl pattern (e.g. Instagram, Reddit, Facebook whose login pages are sub-paths of the site root) (#40)
 - Boolean flags (`--allow-evaluate`, `--no-snapshot`, `--wait-stable`, `--vnc`, `--exact`, `--accept`, `--submit`, `--dismiss`) no longer consume the next positional argument as their value (#27)
 - `getSnapshot` fallback string now includes the error message (e.g. `(accessibility tree unavailable - <reason>)`) instead of the opaque `(accessibility tree unavailable)`, making snapshot failures easier to diagnose (#22)
