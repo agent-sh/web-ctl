@@ -226,7 +226,8 @@ async function fileUpload(page, actionArgs, opts, helpers) {
   // Only allow uploads from safe directories (allowlist approach)
   const path = require('path');
   const resolved = path.resolve(filePath);
-  const allowedPrefixes = ['/tmp/', process.cwd() + '/'];
+  const sep = path.sep;
+  const allowedPrefixes = ['/tmp/', path.resolve('/tmp') + sep, process.cwd() + sep];
   const uploadDir = process.env.WEB_CTL_UPLOAD_DIR;
   if (uploadDir) allowedPrefixes.push(path.resolve(uploadDir) + '/');
   const allowed = allowedPrefixes.some(prefix => resolved.startsWith(prefix));
@@ -234,7 +235,7 @@ async function fileUpload(page, actionArgs, opts, helpers) {
     throw new Error(`File path must be within /tmp, the working directory, or WEB_CTL_UPLOAD_DIR. Got: ${resolved}`);
   }
   // Extra guard for dotfiles even within allowed dirs
-  if (/\/\.[a-z]/i.test(resolved)) {
+  if (/[\\/]\.[a-z]/i.test(resolved)) {
     throw new Error(`File path "${filePath}" contains a dotfile/hidden directory. Use non-hidden paths.`);
   }
 
