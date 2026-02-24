@@ -357,7 +357,7 @@ Auto-detect mode also returns the detected CSS selector, which can be reused wit
 
 All actions that return a snapshot support these flags to control output size.
 
-By default, snapshots are auto-scoped to the main content area of the page. The tool looks for a `<main>` element, then `[role="main"]`, and falls back to `<body>` if neither exists. This automatically excludes navigation, headers, and footers from snapshots, reducing noise and token usage. Use `--snapshot-full` to capture the full page body when needed, or `--snapshot-selector` to scope to a specific element.
+By default, snapshots are auto-scoped to the main content area of the page. The tool looks for a `<main>` element, then `[role="main"]`, and falls back to `<body>` if neither exists. When a main landmark is found, adjacent complementary landmarks (`<aside>`, `[role="complementary"]`) are also included - this captures sidebar content like repository stats without requiring manual scoping. This automatically excludes navigation, headers, and footers from snapshots, reducing noise and token usage. Use `--snapshot-full` to capture the full page body when needed, or `--snapshot-selector` to scope to a specific element.
 
 ### --snapshot-depth N - Limit Tree Depth
 

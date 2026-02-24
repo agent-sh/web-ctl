@@ -90,17 +90,46 @@ function resolveSelector(page, selector) {
 /**
  * Detect the main content area of the page.
  * Tries <main>, then [role="main"], then falls back to <body>.
+ * When a main landmark is found, also captures adjacent complementary
+ * landmarks (aside, [role="complementary"]) and returns a virtual locator
+ * whose ariaSnapshot() concatenates all regions.
  *
  * @param {object} page - Playwright page object
- * @returns {object} Playwright locator for the main content area
+ * @returns {object} Playwright locator (or virtual locator) for the main content area
  */
 async function detectMainContent(page) {
   try {
     const mainTag = page.locator('main').first();
     const mainRole = page.locator('[role="main"]').first();
     const [mainCount, roleCount] = await Promise.all([mainTag.count(), mainRole.count()]);
-    if (mainCount > 0) return mainTag;
-    if (roleCount > 0) return mainRole;
+
+    let mainLocator = null;
+    let compSelector = null;
+    if (mainCount > 0) {
+      mainLocator = mainTag;
+      compSelector = 'main ~ aside, main ~ [role="complementary"]';
+    } else if (roleCount > 0) {
+      mainLocator = mainRole;
+      compSelector = '[role="main"] ~ aside, [role="main"] ~ [role="complementary"]';
+    }
+
+    if (mainLocator) {
+      const compLocator = page.locator(compSelector);
+      const compCount = await compLocator.count();
+      if (compCount > 0) {
+        const cap = Math.min(compCount, 3);
+        return {
+          ariaSnapshot: async () => {
+            const parts = [await mainLocator.ariaSnapshot()];
+            for (let i = 0; i < cap; i++) {
+              try { parts.push(await compLocator.nth(i).ariaSnapshot()); } catch { /* skip */ }
+            }
+            return parts.join('\n');
+          }
+        };
+      }
+      return mainLocator;
+    }
   } catch {
     // fall through to body
   }

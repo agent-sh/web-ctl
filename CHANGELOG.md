@@ -27,6 +27,7 @@
 - `--max-field-length <N>` flag for `extract` macro to configure maximum characters per extracted field (default: 500, max: 2000)
 
 ### Fixed
+- Smart default snapshot scoping now includes complementary ARIA landmarks (`<aside>`, `[role="complementary"]`) alongside `<main>`, capturing sidebar content like repository stats (#26)
 - `extract` auto-detect `buildSelector` no longer produces double ` > > ` combinators in CSS selectors (#52)
 - `extract` auto-detect `buildSelector` skips auto-generated IDs (numeric, hex strings, framework prefixes like `ext-`, `ember`, `ng-`, patterns with `:` or `.`) and anchors on stable human-readable IDs instead, making detected selectors reusable across page reloads (#52)
 - Auth success detection no longer triggers false positives when the login page URL matches the successUrl pattern (e.g. Instagram, Reddit, Facebook whose login pages are sub-paths of the site root) (#40)
