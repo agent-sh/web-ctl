@@ -46,7 +46,7 @@ Safe practice: always double-quote URL arguments.
 ### goto - Navigate to URL
 
 ```bash
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> [--no-auth-wall-detect]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> [--no-auth-wall-detect] [--ensure-auth]
 ```
 
 Navigates to a URL and automatically detects authentication walls using a three-heuristic detection system:
@@ -58,7 +58,9 @@ When an authentication wall is detected, the tool automatically opens a headed c
 
 Use `--no-auth-wall-detect` to disable this automatic detection and skip the checkpoint, navigating headlessly without waiting for user interaction.
 
-Returns: `{ url, status, authWallDetected, checkpointCompleted, snapshot }`
+Use `--ensure-auth` to actively poll for authentication completion instead of a timed checkpoint. When set, the headed browser polls with `checkAuthSuccess` at 2-second intervals using the URL-change heuristic. On success, the headed browser closes, a headless browser relaunches, and the original URL is loaded. On timeout, returns `ensureAuthCompleted: false`. This flag overrides `--no-auth-wall-detect`.
+
+Returns: `{ url, status, authWallDetected, checkpointCompleted, ensureAuthCompleted, snapshot }`
 
 ### snapshot - Get Accessibility Tree
 

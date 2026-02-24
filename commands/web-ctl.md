@@ -48,7 +48,7 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js session end <name>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js session verify <name> --url <url>
 
 # Browser actions
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> [--ensure-auth]
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click <selector>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> read <selector>

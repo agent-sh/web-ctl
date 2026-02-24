@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- `--ensure-auth` flag for goto action - polls for auth completion at 2s intervals using URL-change heuristic instead of a static timed checkpoint. On success, closes headed browser, relaunches headless, and loads the original URL. Overrides `--no-auth-wall-detect` so auth detection runs even when wall detection is disabled
 - Auto-detect authentication walls after goto navigation - uses three-heuristic detection (domain cookies, URL auth patterns, DOM login elements) and automatically opens headed checkpoint. Disable with `--no-auth-wall-detect` flag
 - Smart default snapshot scoping - snapshots automatically scope to `<main>` element (then `[role="main"]`, fallback to `<body>`), reducing output size by excluding navigation, headers, and footers. Use `--snapshot-full` to capture full page body when needed
 - `--snapshot-compact` flag for token-efficient LLM consumption - applies four transforms: link collapsing (merges link + /url child into `link "Title" -> /path`), heading inlining (merges heading with single link child), decorative image removal (strips img nodes with empty or single-char alt text), and duplicate URL dedup (removes second occurrence at same depth scope). Applied after `--snapshot-depth` and before `--snapshot-collapse` in the pipeline
