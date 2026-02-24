@@ -27,9 +27,10 @@ function resolveSelector(page, selector) {
 async function detectMainContent(page) {
   try {
     const mainTag = page.locator('main').first();
-    if (await mainTag.count() > 0) return mainTag;
     const mainRole = page.locator('[role="main"]').first();
-    if (await mainRole.count() > 0) return mainRole;
+    const [mainCount, roleCount] = await Promise.all([mainTag.count(), mainRole.count()]);
+    if (mainCount > 0) return mainTag;
+    if (roleCount > 0) return mainRole;
   } catch {
     // fall through to body
   }
@@ -1429,6 +1430,37 @@ describe('detectMainContent', () => {
     assert.equal(snapshot, 'body content');
   });
 
+  it('prioritizes <main> over [role="main"] when both exist', async () => {
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main') {
+          return {
+            first() {
+              return {
+                count: async () => 1,
+                ariaSnapshot: async () => 'main tag content'
+              };
+            }
+          };
+        }
+        if (selector === '[role="main"]') {
+          return {
+            first() {
+              return {
+                count: async () => 1,
+                ariaSnapshot: async () => 'role content'
+              };
+            }
+          };
+        }
+        return { ariaSnapshot: async () => 'body content' };
+      }
+    };
+    const result = await detectMainContent(mockPage);
+    const snapshot = await result.ariaSnapshot();
+    assert.equal(snapshot, 'main tag content', '<main> should take priority over [role="main"]');
+  });
+
   it('falls back to body when locator.count() throws', async () => {
     const mockPage = {
       locator(selector) {
@@ -1536,5 +1568,49 @@ describe('getSnapshot auto-scoping', () => {
     const result = await getSnapshot(mockPage, { snapshotSelector: 'css=nav' });
     assert.equal(usedSelector, 'nav', 'Should use custom selector, not main detection');
     assert.equal(result, '- heading "Custom Scope"');
+  });
+
+  it('snapshotSelector takes priority over snapshotFull', async () => {
+    let usedSelector = null;
+    const mockPage = {
+      locator(selector) {
+        usedSelector = selector;
+        return {
+          ariaSnapshot: async () => '- heading "Selector Wins"'
+        };
+      }
+    };
+    const result = await getSnapshot(mockPage, { snapshotSelector: '#sidebar', snapshotFull: true });
+    assert.equal(usedSelector, '#sidebar', 'snapshotSelector should override snapshotFull');
+    assert.equal(result, '- heading "Selector Wins"');
+  });
+
+  it('snapshotFull works with snapshot transform flags', async () => {
+    const mockPage = {
+      locator(selector) {
+        if (selector === 'main') {
+          return {
+            first() {
+              return { count: async () => 1, ariaSnapshot: async () => 'main' };
+            }
+          };
+        }
+        if (selector === '[role="main"]') {
+          return {
+            first() { return { count: async () => 0 }; }
+          };
+        }
+        if (selector === 'body') {
+          return {
+            ariaSnapshot: async () => '- navigation\n  - link "Home"\n  - link "About"'
+          };
+        }
+        return { ariaSnapshot: async () => '' };
+      }
+    };
+    const result = await getSnapshot(mockPage, { snapshotFull: true, snapshotDepth: 1 });
+    assert.ok(result.includes('- navigation'), 'Should include top-level node');
+    assert.ok(result.includes('- ...'), 'Should truncate deeper nodes');
+    assert.ok(!result.includes('link "Home"'), 'Should not include depth-2 nodes');
   });
 });

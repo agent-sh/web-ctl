@@ -96,9 +96,10 @@ function resolveSelector(page, selector) {
 async function detectMainContent(page) {
   try {
     const mainTag = page.locator('main').first();
-    if (await mainTag.count() > 0) return mainTag;
     const mainRole = page.locator('[role="main"]').first();
-    if (await mainRole.count() > 0) return mainRole;
+    const [mainCount, roleCount] = await Promise.all([mainTag.count(), mainRole.count()]);
+    if (mainCount > 0) return mainTag;
+    if (roleCount > 0) return mainRole;
   } catch {
     // fall through to body
   }

@@ -309,6 +309,17 @@ describe('snapshot option flag parsing', () => {
     assert.equal(opts['css=nav'], undefined);
   });
 
+  it('parses --snapshot-full as snapshotFull boolean', () => {
+    const opts = parseOptions(['--snapshot-full']);
+    assert.equal(opts.snapshotFull, true);
+  });
+
+  it('--snapshot-full does not consume next positional arg', () => {
+    const opts = parseOptions(['--snapshot-full', 'css=nav']);
+    assert.equal(opts.snapshotFull, true);
+    assert.equal(opts['css=nav'], undefined);
+  });
+
   it('combines all new snapshot flags', () => {
     const opts = parseOptions([
       '--snapshot-depth', '3',
