@@ -200,6 +200,7 @@ describe('snapshot option flag parsing', () => {
   const BOOLEAN_FLAGS = new Set([
     '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
     '--exact', '--accept', '--submit', '--dismiss',
+    '--snapshot-collapse', '--snapshot-text-only',
   ]);
 
   // Replicate parseOptions for unit testing
@@ -269,6 +270,46 @@ describe('snapshot option flag parsing', () => {
     assert.equal(opts.noSnapshot, true);
   });
 
+  it('parses --snapshot-max-lines as snapshotMaxLines', () => {
+    const opts = parseOptions(['--snapshot-max-lines', '50']);
+    assert.equal(opts.snapshotMaxLines, '50');
+  });
+
+  it('parses --snapshot-collapse as snapshotCollapse boolean', () => {
+    const opts = parseOptions(['--snapshot-collapse']);
+    assert.equal(opts.snapshotCollapse, true);
+  });
+
+  it('parses --snapshot-text-only as snapshotTextOnly boolean', () => {
+    const opts = parseOptions(['--snapshot-text-only']);
+    assert.equal(opts.snapshotTextOnly, true);
+  });
+
+  it('--snapshot-collapse does not consume next positional arg', () => {
+    const opts = parseOptions(['--snapshot-collapse', 'css=nav']);
+    assert.equal(opts.snapshotCollapse, true);
+    // css=nav should NOT be consumed as the value of --snapshot-collapse
+    assert.equal(opts['css=nav'], undefined);
+  });
+
+  it('--snapshot-text-only does not consume next positional arg', () => {
+    const opts = parseOptions(['--snapshot-text-only', 'css=nav']);
+    assert.equal(opts.snapshotTextOnly, true);
+  });
+
+  it('combines all new snapshot flags', () => {
+    const opts = parseOptions([
+      '--snapshot-depth', '3',
+      '--snapshot-collapse',
+      '--snapshot-text-only',
+      '--snapshot-max-lines', '100'
+    ]);
+    assert.equal(opts.snapshotDepth, '3');
+    assert.equal(opts.snapshotCollapse, true);
+    assert.equal(opts.snapshotTextOnly, true);
+    assert.equal(opts.snapshotMaxLines, '100');
+  });
+
   // Replicate cleanArgs extraction for unit testing
   function extractCleanArgs(args, startIndex) {
     const cleanArgs = [];
@@ -314,6 +355,18 @@ describe('snapshot option flag parsing', () => {
 
   it('cleanArgs handles multiple value-bearing flags', () => {
     const args = ['session', 'click', '--timeout', '5000', '--path', '/tmp/file', 'css=button'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, ['css=button']);
+  });
+
+  it('cleanArgs does not consume positional after --snapshot-collapse', () => {
+    const args = ['session', 'snapshot', '--snapshot-collapse', '--snapshot-text-only'];
+    const cleanArgs = extractCleanArgs(args, 2);
+    assert.deepEqual(cleanArgs, []);
+  });
+
+  it('cleanArgs preserves positional arg after --snapshot-text-only', () => {
+    const args = ['session', 'click', '--snapshot-text-only', 'css=button'];
     const cleanArgs = extractCleanArgs(args, 2);
     assert.deepEqual(cleanArgs, ['css=button']);
   });
@@ -369,6 +422,55 @@ describe('snapshot options in web-ctl source', () => {
   it('curries getSnapshot for macro helpers', () => {
     assert.ok(webCtlSource.includes('getSnapshot: (page) => getSnapshot(page, opts)'),
       'macro helpers should curry getSnapshot with opts');
+  });
+
+  it('trimByLines function exists', () => {
+    assert.ok(webCtlSource.includes('function trimByLines(snapshot, maxLines)'), 'trimByLines should be defined');
+  });
+
+  it('collapseRepeated function exists', () => {
+    assert.ok(webCtlSource.includes('function collapseRepeated(snapshot)'), 'collapseRepeated should be defined');
+  });
+
+  it('textOnly function exists', () => {
+    assert.ok(webCtlSource.includes('function textOnly(snapshot)'), 'textOnly should be defined');
+  });
+
+  it('help text contains --snapshot-max-lines flag', () => {
+    assert.ok(webCtlSource.includes('--snapshot-max-lines'), 'help should document --snapshot-max-lines');
+  });
+
+  it('help text contains --snapshot-collapse flag', () => {
+    assert.ok(webCtlSource.includes('--snapshot-collapse'), 'help should document --snapshot-collapse');
+  });
+
+  it('help text contains --snapshot-text-only flag', () => {
+    assert.ok(webCtlSource.includes('--snapshot-text-only'), 'help should document --snapshot-text-only');
+  });
+
+  it('validates snapshotMaxLines is positive integer', () => {
+    assert.ok(webCtlSource.includes('snapshotMaxLines') && webCtlSource.includes('--snapshot-max-lines must be'),
+      'should validate snapshotMaxLines');
+  });
+
+  it('BOOLEAN_FLAGS includes --snapshot-collapse', () => {
+    assert.ok(webCtlSource.includes("'--snapshot-collapse'"), '--snapshot-collapse should be in BOOLEAN_FLAGS');
+  });
+
+  it('BOOLEAN_FLAGS includes --snapshot-text-only', () => {
+    assert.ok(webCtlSource.includes("'--snapshot-text-only'"), '--snapshot-text-only should be in BOOLEAN_FLAGS');
+  });
+
+  it('getSnapshot pipeline applies all four transforms in order', () => {
+    // Verify the pipeline: depth -> collapse -> text-only -> max-lines
+    const depthIdx = webCtlSource.indexOf('opts.snapshotDepth) result = trimByDepth');
+    const collapseIdx = webCtlSource.indexOf('opts.snapshotCollapse) result = collapseRepeated');
+    const textOnlyIdx = webCtlSource.indexOf('opts.snapshotTextOnly) result = textOnly');
+    const maxLinesIdx = webCtlSource.indexOf('opts.snapshotMaxLines) result = trimByLines');
+    assert.ok(depthIdx > 0, 'trimByDepth should be in pipeline');
+    assert.ok(collapseIdx > depthIdx, 'collapseRepeated should follow trimByDepth');
+    assert.ok(textOnlyIdx > collapseIdx, 'textOnly should follow collapseRepeated');
+    assert.ok(maxLinesIdx > textOnlyIdx, 'trimByLines should follow textOnly');
   });
 });
 
