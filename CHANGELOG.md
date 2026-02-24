@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- `extract` macro for structured data extraction from repeated list items with two modes: selector mode (`--selector <sel> --fields f1,f2,...`) for targeted extraction and auto-detect mode (`--auto`) that finds repeated patterns automatically using structural signature matching
 - Auto-create sessions on first `run` command - sessions are created automatically if they don't exist, eliminating the need for explicit `session start` before browsing. Response includes `autoCreated: true` flag when a session was auto-created.
 - `next-page` macro to auto-detect and follow pagination links using multiple heuristics (rel="next", ARIA roles, CSS patterns, page numbers)
 - `paginate` macro to collect items across paginated pages with `--selector`, `--max-pages` (default 5, max 20), and `--max-items` (default 100, max 500) options

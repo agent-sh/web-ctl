@@ -125,6 +125,8 @@ web-ctl session end github
 | `login` | `run <s> login --user <u> --pass <p>` | `{ url, loggedIn, snapshot }` |
 | `next-page` | `run <s> next-page` | `{ url, previousUrl, nextPageDetected, snapshot }` |
 | `paginate` | `run <s> paginate --selector <sel> [--max-pages N] [--max-items N]` | `{ url, startUrl, pages, totalItems, items, hasMore, snapshot }` |
+| `extract` | `run <s> extract --selector <sel> [--fields f1,f2] [--max-items N]` | `{ url, mode, selector, fields, count, items, snapshot }` |
+| `extract` | `run <s> extract --auto [--max-items N]` | `{ url, mode, selector, fields, count, items, snapshot }` |
 
 ### click vs click-wait
 
@@ -206,7 +208,7 @@ All error responses include actionable recovery suggestions:
 
 | Skill | Purpose |
 |-------|---------|
-| `web-browse` | Headless actions: goto, click, click-wait, snapshot, type, read, fill, wait, evaluate, screenshot, network, checkpoint + 14 macros |
+| `web-browse` | Headless actions: goto, click, click-wait, snapshot, type, read, fill, wait, evaluate, screenshot, network, checkpoint + 15 macros |
 | `web-auth` | Human-in-the-loop auth: headed browser, polls for success URL/selector, encrypts session |
 
 ## Auth Handoff Protocol

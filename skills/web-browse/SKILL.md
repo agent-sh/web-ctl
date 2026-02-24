@@ -280,6 +280,53 @@ Extracts text content from elements matching `--selector` across multiple pages.
 
 Returns: `{ url, startUrl, pages, totalItems, items, hasMore, snapshot }`
 
+### extract - Extract Structured Data from Repeated Elements
+
+**Selector mode** - extract fields from elements matching a CSS selector:
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> extract --selector <css-selector> [--fields f1,f2,...] [--max-items N]
+```
+
+**Auto-detect mode** - automatically find repeated patterns on the page:
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> extract --auto [--max-items N]
+```
+
+Extracts structured data from repeated list items. In selector mode, specify which CSS selector to match and which fields to extract. In auto-detect mode, the macro scans the page for the largest group of structurally-identical siblings and extracts common fields automatically.
+
+**Fields** (default: `title,url,text`):
+- `title` - first heading (h1-h6) or element with "title" in class name
+- `url` - first anchor's href attribute
+- `author` - element with "author" in class name or `rel="author"`
+- `date` - `time[datetime]` attribute, or element with "date" in class name
+- `tags` - all elements with "tag" in class name, returned as array
+- `text` - full textContent of the element
+- `image` - first img element's src attribute
+- Any other name - tries `[class*="name"]` textContent
+
+**Options**:
+- `--fields f1,f2,...` - comma-separated field names (selector mode only, default: title,url,text)
+- `--max-items N` - maximum items to return (default: 100, max: 500)
+
+**Examples**:
+
+```bash
+# Extract titles and URLs from blog post cards
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run mysession extract --selector ".post-card" --fields "title,url,author,date"
+
+# Auto-detect repeated items on a search results page
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run mysession extract --auto --max-items 20
+
+# Extract product listings with images
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run mysession extract --selector ".product-item" --fields "title,url,image,text"
+```
+
+Returns: `{ url, mode, selector, fields, count, items, snapshot }`
+
+Auto-detect mode also returns the detected CSS selector, which can be reused with selector mode for subsequent pages.
+
 ## Snapshot Control
 
 All actions that return a snapshot support these flags to control output size:
