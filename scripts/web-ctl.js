@@ -931,7 +931,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
               context = headedBrowser.context;
               page = headedBrowser.page;
               await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-              const ckTimeout = (opts.timeout ? parseInt(opts.timeout, 10) : 120) * 1000;
+              const ckTimeout = Math.min(opts.timeout ? parseInt(opts.timeout, 10) : 120, 3600) * 1000;
               console.warn('[WARN] Checkpoint open for ' + (ckTimeout / 1000) + 's');
               await new Promise(resolve => setTimeout(resolve, ckTimeout));
               const snapshot = await getSnapshot(page, opts);

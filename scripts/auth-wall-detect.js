@@ -98,17 +98,19 @@ async function detectAuthWall(page, context, targetUrl) {
   }
 
   // Heuristic 3: DOM contains auth elements
-  // 3a: Check selectors
+  // 3a: Check selectors (parallel for performance)
   let matchedSelector = null;
-  for (const selector of AUTH_DOM_SELECTORS) {
-    try {
-      const el = await page.$(selector);
-      if (el) {
-        matchedSelector = selector;
+  try {
+    const results = await Promise.allSettled(
+      AUTH_DOM_SELECTORS.map(async (sel) => ({ sel, el: await page.$(sel) }))
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled' && r.value.el) {
+        matchedSelector = r.value.sel;
         break;
       }
-    } catch {
     }
+  } catch {
   }
 
   if (matchedSelector) {
@@ -126,7 +128,7 @@ async function detectAuthWall(page, context, targetUrl) {
   // 3b: Check text patterns
   let matchedText = null;
   try {
-    const bodyText = (await page.textContent('body') || '').toLowerCase();
+    const bodyText = (await page.textContent('body') || '').slice(0, 5000).toLowerCase();
     matchedText = AUTH_TEXT_PATTERNS.find(pattern => bodyText.includes(pattern));
   } catch {
   }

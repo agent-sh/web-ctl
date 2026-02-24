@@ -177,6 +177,33 @@ describe('detectAuthWall', () => {
     assert.equal(result.reason, 'no_auth_elements');
   });
 
+  it('returns detected: false when target URL is invalid', async () => {
+    const page = mockPage({ url: 'https://github.com/login' });
+    const context = mockContext({ cookies: [{ domain: '.github.com', name: 's', value: 'v' }] });
+    const result = await detectAuthWall(page, context, 'not-a-valid-url');
+    assert.equal(result.detected, false);
+    assert.equal(result.reason, 'invalid_target_url');
+  });
+
+  it('handles context.cookies() error gracefully', async () => {
+    const page = mockPage({ url: 'https://github.com/login' });
+    const context = { cookies: async () => { throw new Error('Context destroyed'); } };
+    const result = await detectAuthWall(page, context, 'https://github.com/dashboard');
+    assert.equal(result.detected, false);
+    assert.equal(result.reason, 'cookie_read_error');
+  });
+
+  it('detects auth wall with uppercase URL (case insensitive)', async () => {
+    const page = mockPage({
+      url: 'https://example.com/LOGIN/page',
+      selectors: ['input[type="password"]']
+    });
+    const context = mockContext({ cookies: [{ domain: '.example.com', name: 's', value: 'v' }] });
+    const result = await detectAuthWall(page, context, 'https://example.com/app');
+    assert.equal(result.detected, true);
+    assert.equal(result.details.authUrlPattern, 'login');
+  });
+
   it('exported constants are arrays', () => {
     assert.ok(Array.isArray(AUTH_URL_PATTERNS), 'AUTH_URL_PATTERNS should be an array');
     assert.ok(Array.isArray(AUTH_DOM_SELECTORS), 'AUTH_DOM_SELECTORS should be an array');
