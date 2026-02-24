@@ -226,7 +226,8 @@ async function fileUpload(page, actionArgs, opts, helpers) {
   // Only allow uploads from safe directories (allowlist approach)
   const path = require('path');
   const resolved = path.resolve(filePath);
-  const allowedPrefixes = ['/tmp/', process.cwd() + '/'];
+  const sep = path.sep;
+  const allowedPrefixes = ['/tmp/', path.resolve('/tmp') + sep, process.cwd() + sep];
   const uploadDir = process.env.WEB_CTL_UPLOAD_DIR;
   if (uploadDir) allowedPrefixes.push(path.resolve(uploadDir) + '/');
   const allowed = allowedPrefixes.some(prefix => resolved.startsWith(prefix));
@@ -234,7 +235,7 @@ async function fileUpload(page, actionArgs, opts, helpers) {
     throw new Error(`File path must be within /tmp, the working directory, or WEB_CTL_UPLOAD_DIR. Got: ${resolved}`);
   }
   // Extra guard for dotfiles even within allowed dirs
-  if (/\/\.[a-z]/i.test(resolved)) {
+  if (/[\\/]\.[a-z]/i.test(resolved)) {
     throw new Error(`File path "${filePath}" contains a dotfile/hidden directory. Use non-hidden paths.`);
   }
 
@@ -434,6 +435,229 @@ async function login(page, actionArgs, opts, helpers) {
   return { url: page.url(), loggedIn: true, snapshot };
 }
 
+/**
+ * Validate that a URL is safe for navigation (http/https only).
+ * Prevents open-redirect attacks via javascript:, data:, or file: hrefs.
+ *
+ * @param {string} href - The href to validate
+ * @param {string} currentUrl - The current page URL (used as base for relative URLs)
+ * @returns {boolean}
+ */
+function isValidNavigationUrl(href, currentUrl) {
+  try {
+    const url = new URL(href, currentUrl);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Navigate to a pagination target - shared between nextPage and paginate.
+ * Prefers goto for clean navigation when href is a valid http(s) URL on
+ * an anchor element; falls back to clicking the element otherwise.
+ *
+ * @param {object} page - Playwright page
+ * @param {object} paginationResult - { element, href, method } from detectPaginationLink
+ * @param {object} helpers - macro helpers (waitForStable required)
+ */
+async function navigateToPage(page, paginationResult, helpers) {
+  const { element, href, method } = paginationResult;
+  if (href && isValidNavigationUrl(href, page.url())) {
+    if (method === 'rel-next-link' || method === 'rel-next-a') {
+      await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 10000 });
+    } else {
+      // For other methods, check if it is an <a> tag
+      const tagName = await element.evaluate(el => el.tagName.toLowerCase()).catch(() => 'unknown');
+      if (tagName === 'a') {
+        await page.goto(href, { waitUntil: 'domcontentloaded', timeout: 10000 });
+      } else {
+        await element.click({ timeout: 10000 });
+      }
+    }
+  } else if (method === 'rel-next-link') {
+    // <link> elements are not interactive - cannot click; invalid href means no navigation
+    throw new Error('Pagination <link rel="next"> has no valid href. Cannot navigate.');
+  } else {
+    await element.click({ timeout: 10000 });
+  }
+  await helpers.waitForStable(page, { timeout: 10000 });
+}
+
+/**
+ * Detect a pagination link or button on the page.
+ * Tries multiple heuristics in priority order:
+ *   1. rel="next" links
+ *   2. ARIA role links/buttons with common next-page text
+ *   3. CSS class patterns (.pagination .next, aria-label, etc.)
+ *   4. Current-page number + 1 within a pagination container
+ *
+ * @param {object} page - Playwright page
+ * @param {string} direction - 'next' (only 'next' is supported currently)
+ * @returns {{ element, href, method }|null}
+ */
+async function detectPaginationLink(page, direction = 'next') {
+  // Heuristic 1: rel="next" links
+  const relNext = page.locator('a[rel="next"], link[rel="next"]');
+  if (await relNext.count() > 0) {
+    const first = relNext.first();
+    const tagName = await first.evaluate(el => el.tagName.toLowerCase()).catch(() => 'link');
+    if (tagName === 'a') {
+      if (await first.isVisible().catch(() => false)) {
+        const href = await first.getAttribute('href').catch(() => null);
+        return { element: first, href, method: 'rel-next-a' };
+      }
+    } else {
+      // <link rel="next"> - extract href for goto
+      const href = await first.getAttribute('href').catch(() => null);
+      if (href) {
+        return { element: first, href, method: 'rel-next-link' };
+      }
+    }
+  }
+
+  // Heuristic 2: role-based links/buttons with common next-page text
+  const nextPatterns = /^(Next|Next page|>|>>|\u203A|\u00BB)$/i;
+  for (const role of ['link', 'button']) {
+    const candidates = page.getByRole(role, { name: nextPatterns });
+    if (await candidates.count() > 0) {
+      const first = candidates.first();
+      if (await first.isVisible().catch(() => false)) {
+        const href = role === 'link' ? await first.getAttribute('href').catch(() => null) : null;
+        return { element: first, href, method: 'role-text' };
+      }
+    }
+  }
+
+  // Heuristic 3: CSS class and aria-label patterns
+  const cssPatterns = page.locator(
+    '.pagination a.next, .pagination .next a, .pager-next a, ' +
+    'a[aria-label*="next" i], button[aria-label*="next" i], ' +
+    '[class*="pagination"] [class*="next"] a'
+  );
+  if (await cssPatterns.count() > 0) {
+    const first = cssPatterns.first();
+    if (await first.isVisible().catch(() => false)) {
+      const href = await first.getAttribute('href').catch(() => null);
+      return { element: first, href, method: 'css-pattern' };
+    }
+  }
+
+  // Heuristic 4: Current page number N -> find link/button with text N+1
+  const activePage = page.locator('[aria-current="page"], .pagination .active, .page-item.active');
+  if (await activePage.count() > 0) {
+    const activeText = await activePage.first().textContent().catch(() => '');
+    const currentNum = parseInt((activeText || '').trim(), 10);
+    if (!isNaN(currentNum)) {
+      const nextNum = String(currentNum + 1);
+      // Look within pagination container
+      const paginationContainer = page.locator('.pagination, [role="navigation"], nav[aria-label*="pag" i]');
+      if (await paginationContainer.count() > 0) {
+        const container = paginationContainer.first();
+        for (const role of ['link', 'button']) {
+          const numLink = container.getByRole(role, { name: nextNum, exact: true });
+          if (await numLink.count() > 0) {
+            const el = numLink.first();
+            if (await el.isVisible().catch(() => false)) {
+              const href = role === 'link' ? await el.getAttribute('href').catch(() => null) : null;
+              return { element: el, href, method: 'page-number' };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return null;
+}
+
+async function nextPage(page, actionArgs, opts, helpers) {
+  const result = await detectPaginationLink(page, 'next');
+  if (!result) {
+    throw new Error('No pagination controls detected. The page may not have pagination or uses an unsupported pattern.');
+  }
+
+  const previousUrl = page.url();
+  await navigateToPage(page, result, helpers);
+  const snapshot = await helpers.getSnapshot(page);
+  return { url: page.url(), previousUrl, nextPageDetected: result.method, snapshot };
+}
+
+async function paginate(page, actionArgs, opts, helpers) {
+  if (!opts.selector) {
+    throw new Error('Usage: paginate --selector <css-selector> [--max-pages N] [--max-items N]');
+  }
+
+  if (opts.maxPages != null && isNaN(parseInt(opts.maxPages, 10))) {
+    throw new Error('Invalid --max-pages value. Must be a number.');
+  }
+  if (opts.maxItems != null && isNaN(parseInt(opts.maxItems, 10))) {
+    throw new Error('Invalid --max-items value. Must be a number.');
+  }
+
+  const maxPages = Math.min(Math.max(parseInt(opts.maxPages, 10) || 5, 1), 20);
+  const maxItems = Math.min(Math.max(parseInt(opts.maxItems, 10) || 100, 1), 500);
+  const PER_PAGE_CAP = 1000;
+
+  const startUrl = page.url();
+  const allItems = [];
+  let pagesVisited = 0;
+  let hasMore = false;
+
+  for (let i = 0; i < maxPages; i++) {
+    pagesVisited++;
+
+    // Extract items from current page via single page function call
+    // instead of N+1 async textContent() queries per element.
+    let texts = await page.$$eval(opts.selector, els =>
+      els.map(el => (el.textContent || '').trim()).filter(Boolean)
+    );
+
+    // Bound per-page results to prevent memory exhaustion
+    if (texts.length > PER_PAGE_CAP) {
+      texts = texts.slice(0, PER_PAGE_CAP);
+    }
+
+    // Respect maxItems: only take what we still need
+    const remaining = maxItems - allItems.length;
+    if (texts.length > remaining) {
+      allItems.push(...texts.slice(0, remaining));
+      hasMore = true;
+      break;
+    }
+    allItems.push(...texts);
+
+    // Detect next page BEFORE checking page limit - this lets us accurately
+    // report hasMore based on whether a next page actually exists.
+    const next = await detectPaginationLink(page, 'next');
+    if (!next) {
+      // No more pages available
+      break;
+    }
+
+    // A next page exists. If we have hit the page limit, report hasMore and stop.
+    if (pagesVisited >= maxPages) {
+      hasMore = true;
+      break;
+    }
+
+    // Navigate to next page using shared helper (validates URL protocol)
+    await helpers.randomDelay();
+    await navigateToPage(page, next, helpers);
+  }
+
+  const snapshot = await helpers.getSnapshot(page);
+  return {
+    url: page.url(),
+    startUrl,
+    pages: pagesVisited,
+    totalItems: allItems.length,
+    items: allItems,
+    hasMore,
+    snapshot
+  };
+}
+
 const macros = {
   'select-option': selectOption,
   'tab-switch': tabSwitch,
@@ -446,7 +670,9 @@ const macros = {
   'scroll-to': scrollTo,
   'wait-toast': waitToast,
   'iframe-action': iframeAction,
-  'login': login
+  'login': login,
+  'next-page': nextPage,
+  'paginate': paginate
 };
 
 module.exports = { macros };

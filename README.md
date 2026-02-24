@@ -123,6 +123,8 @@ web-ctl session end github
 | `wait-toast` | `run <s> wait-toast [--timeout <ms>] [--dismiss]` | `{ url, toast, snapshot }` |
 | `iframe-action` | `run <s> iframe-action <iframe> <action> [args]` | `{ url, iframe, ..., snapshot }` |
 | `login` | `run <s> login --user <u> --pass <p>` | `{ url, loggedIn, snapshot }` |
+| `next-page` | `run <s> next-page` | `{ url, previousUrl, nextPageDetected, snapshot }` |
+| `paginate` | `run <s> paginate --selector <sel> [--max-pages N] [--max-items N]` | `{ url, startUrl, pages, totalItems, items, hasMore, snapshot }` |
 
 ### click vs click-wait
 
@@ -204,7 +206,7 @@ All error responses include actionable recovery suggestions:
 
 | Skill | Purpose |
 |-------|---------|
-| `web-browse` | Headless actions: goto, click, click-wait, snapshot, type, read, fill, wait, evaluate, screenshot, network, checkpoint + 12 macros |
+| `web-browse` | Headless actions: goto, click, click-wait, snapshot, type, read, fill, wait, evaluate, screenshot, network, checkpoint + 14 macros |
 | `web-auth` | Human-in-the-loop auth: headed browser, polls for success URL/selector, encrypts session |
 
 ## Auth Handoff Protocol

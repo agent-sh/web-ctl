@@ -733,6 +733,10 @@ Macros (higher-level actions):
   wait-toast [--dismiss]        Wait for toast/notification
   iframe-action <sel> <action>  Perform action inside iframe
   login --user <u> --pass <p>   Auto-detect and fill login form
+  next-page                   Detect and follow next-page link
+  paginate --selector <sel>   Collect items across paginated pages
+    [--max-pages N]             Max pages to visit (default: 5, max: 20)
+    [--max-items N]             Max items to collect (default: 100, max: 500)
 
 Snapshot options (apply to any action that returns a snapshot):
   --snapshot-depth <N>          Limit ARIA tree depth (e.g. 3 for top 3 levels)

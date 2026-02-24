@@ -257,6 +257,29 @@ Auto-detects username and password fields, fills them, finds and clicks the subm
 
 Returns: `{ url, loggedIn, snapshot }`
 
+### next-page - Follow Next Page Link
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> next-page
+```
+
+Auto-detects pagination controls using multiple heuristics (rel="next" links, ARIA roles with "Next" text, CSS class patterns, active page number). Navigates to the next page.
+
+Returns: `{ url, previousUrl, nextPageDetected, snapshot }`
+
+### paginate - Collect Items Across Pages
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> paginate --selector <css-selector> [--max-pages N] [--max-items N]
+```
+
+Extracts text content from elements matching `--selector` across multiple pages. Automatically detects and follows pagination links between pages.
+
+- `--max-pages`: Maximum pages to visit (default: 5, max: 20)
+- `--max-items`: Maximum items to collect (default: 100, max: 500)
+
+Returns: `{ url, startUrl, pages, totalItems, items, hasMore, snapshot }`
+
 ## Snapshot Control
 
 All actions that return a snapshot support these flags to control output size:
