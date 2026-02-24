@@ -3,11 +3,13 @@
 ## [Unreleased]
 
 ### Added
+- `next-page` macro to auto-detect and follow pagination links using multiple heuristics (rel="next", ARIA roles, CSS patterns, page numbers)
+- `paginate` macro to collect items across paginated pages with `--selector`, `--max-pages` (default 5, max 20), and `--max-items` (default 100, max 500) options
 - `--snapshot-depth N` flag to limit ARIA tree depth in snapshot output, replacing deep subtrees with `- ...` truncation markers
 - `--snapshot-selector <sel>` flag to scope snapshots to a DOM subtree instead of the full page body
 - `--no-snapshot` flag to omit snapshot from action responses entirely, saving tokens when only the side-effect matters
 - `session verify` command to check if session is still authenticated before multi-step flows
-- 12 action macros for common UI patterns: `select-option`, `tab-switch`, `modal-dismiss`, `form-fill`, `search-select`, `date-pick`, `file-upload`, `hover-reveal`, `scroll-to`, `wait-toast`, `iframe-action`, `login`
+- 14 action macros for common UI patterns: `select-option`, `tab-switch`, `modal-dismiss`, `form-fill`, `search-select`, `date-pick`, `file-upload`, `hover-reveal`, `scroll-to`, `wait-toast`, `iframe-action`, `login`, `next-page`, `paginate`
 - `file-upload` macro enforces path allowlist (`/tmp`, cwd, `WEB_CTL_UPLOAD_DIR`) and blocks dotfile paths
 - `login` macro supports `WEB_CTL_USER` / `WEB_CTL_PASS` environment variables as a safer alternative to CLI flags
 - Post-auth headless verification automatically tests target service accessibility after successful authentication, returning optional `headlessVerification` object in auth response

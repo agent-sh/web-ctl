@@ -72,6 +72,8 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> scroll-to <sel>
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> wait-toast [--dismiss]
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> iframe-action <iframe> <action> [args]
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> login --user <u> --pass <p>
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> next-page
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> paginate --selector <sel> [--max-pages N] [--max-items N]
 ```
 
 ## Examples
