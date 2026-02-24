@@ -21,7 +21,7 @@ const BOOLEAN_FLAGS = new Set([
   '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
   '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
-  '--snapshot-full', '--no-auth-wall-detect',
+  '--snapshot-full', '--no-auth-wall-detect', '--ensure-auth',
 ]);
 
 function validateSessionName(name) {
@@ -951,7 +951,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
         if (!url) throw new Error('URL required: run <session> goto <url>');
         validateUrl(url);
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        if (!opts.noAuthWallDetect) {
+        if (opts.ensureAuth || !opts.noAuthWallDetect) {
           const detection = await detectAuthWall(page, context, url);
           if (detection.detected) {
             console.warn('[WARN] Auth wall detected for ' + new URL(url).hostname);
@@ -963,13 +963,53 @@ async function runAction(sessionName, action, actionArgs, opts) {
               page = headedBrowser.page;
               await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
               const ckTimeout = Math.min(opts.timeout ? parseInt(opts.timeout, 10) : 120, 3600) * 1000;
-              console.warn('[WARN] Checkpoint open for ' + (ckTimeout / 1000) + 's');
-              await new Promise(resolve => setTimeout(resolve, ckTimeout));
-              const snapshot = await getSnapshot(page, opts);
-              result = { url: page.url(), authWallDetected: true, checkpointCompleted: true,
-                         ...(snapshot != null && { snapshot }) };
-              break;
+              if (opts.ensureAuth) {
+                console.warn('[WARN] Waiting for auth completion (' + (ckTimeout / 1000) + 's timeout)');
+                const pollInterval = 2000;
+                const startTime = Date.now();
+                let authCompleted = false;
+                while (Date.now() - startTime < ckTimeout) {
+                  const authResult = await checkAuthSuccess(page, context, url, { loginUrl: url });
+                  if (authResult.success) {
+                    authCompleted = true;
+                    break;
+                  }
+                  await new Promise(resolve => setTimeout(resolve, pollInterval));
+                }
+                if (authCompleted) {
+                  const originalUrl = url;
+                  await closeBrowser(sessionName, context);
+                  const headlessBrowser = await launchBrowser(sessionName, { headless: true });
+                  context = headlessBrowser.context;
+                  page = headlessBrowser.page;
+                  await page.goto(originalUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                  const snapshot = await getSnapshot(page, opts);
+                  result = { url: page.url(), authWallDetected: true, ensureAuthCompleted: true,
+                             ...(snapshot != null && { snapshot }) };
+                  break;
+                } else {
+                  await closeBrowser(sessionName, context);
+                  const headlessBrowser = await launchBrowser(sessionName, { headless: true });
+                  context = headlessBrowser.context;
+                  page = headlessBrowser.page;
+                  result = { url: page.url(), authWallDetected: true, ensureAuthCompleted: false,
+                             message: 'Auth did not complete within timeout' };
+                  break;
+                }
+              } else {
+                console.warn('[WARN] Checkpoint open for ' + (ckTimeout / 1000) + 's');
+                await new Promise(resolve => setTimeout(resolve, ckTimeout));
+                const snapshot = await getSnapshot(page, opts);
+                result = { url: page.url(), authWallDetected: true, checkpointCompleted: true,
+                           ...(snapshot != null && { snapshot }) };
+                break;
+              }
             } else {
+              if (opts.ensureAuth) {
+                result = { url: page.url(), authWallDetected: true, ensureAuthCompleted: false,
+                           message: 'Auth wall detected but no display available for headed browser.' };
+                break;
+              }
               const snapshot = await getSnapshot(page, opts);
               result = { url: page.url(), authWallDetected: true, checkpointCompleted: false,
                          message: 'Auth wall detected but no display for headed checkpoint.',
