@@ -1242,6 +1242,7 @@ Session commands:
 
 Run actions:
   goto <url>                    Navigate to URL
+    [--ensure-auth]             Poll for auth completion instead of timed checkpoint
   snapshot                      Get accessibility tree
   click <selector>              Click element
     [--wait-stable]             Wait for DOM + network to settle after click
