@@ -117,6 +117,29 @@ describe('detectAuthWall', () => {
     assert.equal(result.detected, true);
   });
 
+  it('cookie domain matching: subdomain (.github.com matches api.github.com)', async () => {
+    const page = mockPage({
+      url: 'https://api.github.com/login',
+      selectors: ['input[type="password"]']
+    });
+    const context = mockContext({ cookies: [{ domain: '.github.com', name: 's', value: 'v' }] });
+    const result = await detectAuthWall(page, context, 'https://api.github.com/dashboard');
+    assert.equal(result.detected, true);
+  });
+
+  it('detects auth text within 5000 char body limit', async () => {
+    const longBody = 'x'.repeat(4980) + ' sign in to continue';
+    const page = mockPage({
+      url: 'https://example.com/login',
+      selectors: [],
+      bodyText: longBody
+    });
+    const context = mockContext({ cookies: [{ domain: '.example.com', name: 's', value: 'v' }] });
+    const result = await detectAuthWall(page, context, 'https://example.com/app');
+    assert.equal(result.detected, true);
+    assert.equal(result.details.domElement, 'sign in');
+  });
+
   it('detects Google accounts.google.com', async () => {
     const page = mockPage({
       url: 'https://accounts.google.com/v3/chooser',
