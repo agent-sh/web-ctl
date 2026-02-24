@@ -754,15 +754,17 @@ async function extract(page, actionArgs, opts, helpers) {
           }
           default: {
             // Table column_N field support
-            var colMatch = name.match(/^column_(\d+)$/);
-            if (colMatch) {
-              var colNum = parseInt(colMatch[1], 10);
-              var tdIdx = 0;
-              var ch = el.children;
-              for (var ci = 0; ci < ch.length; ci++) {
-                if (ch[ci].tagName === 'TD') {
-                  tdIdx++;
-                  if (tdIdx === colNum) return truncate((ch[ci].textContent || '').trim());
+            if (name.indexOf('column_') === 0) {
+              var colMatch = name.match(/^column_(\d+)$/);
+              if (colMatch) {
+                var colNum = parseInt(colMatch[1], 10);
+                var tdIdx = 0;
+                var ch = el.children;
+                for (var ci = 0; ci < ch.length; ci++) {
+                  if (ch[ci].tagName === 'TD') {
+                    tdIdx++;
+                    if (tdIdx === colNum) return truncate((ch[ci].textContent || '').trim());
+                  }
                 }
               }
               return null;
@@ -933,12 +935,15 @@ async function extract(page, actionArgs, opts, helpers) {
     var keys = Object.keys(groups);
     for (var k = 0; k < keys.length; k++) {
       var group = groups[keys[k]];
+      if (group.elements.length < 3) continue;
 
       // For table TR groups, skip header row (all-TH children) in signature check
       var sigStart = 0;
+      var isTableTR = false;
       if (group.tag === 'TR') {
-        var pt = group.parent.tagName;
-        if (pt === 'TBODY' || pt === 'TABLE' || pt === 'THEAD') {
+        var parentTag = group.parent.tagName;
+        if (parentTag === 'TBODY' || parentTag === 'TABLE' || parentTag === 'THEAD') {
+          isTableTR = true;
           var firstKids = group.elements[0].children;
           var allTH = firstKids.length > 0;
           for (var th = 0; th < firstKids.length; th++) {
@@ -962,10 +967,7 @@ async function extract(page, actionArgs, opts, helpers) {
       var score = group.elements.length;
       if (isContentArea(group.parent)) score *= 3;
       if (isNavArea(group.parent)) score *= 0.3;
-      if (group.tag === 'TR') {
-        var pt2 = group.parent.tagName;
-        if (pt2 === 'TBODY' || pt2 === 'TABLE' || pt2 === 'THEAD') score *= 2;
-      }
+      if (isTableTR) score *= 2;
 
       if (score > bestScore) {
         bestScore = score;
