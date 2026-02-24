@@ -27,6 +27,20 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session-name> <action> [args] [optio
 
 All commands return JSON with `{ ok: true/false, command, session, result }`. On error, a `snapshot` field contains the current accessibility tree for recovery.
 
+## Shell Quoting
+
+Always double-quote URLs containing `?`, `&`, or `#` - these characters trigger shell glob expansion or backgrounding in zsh and bash.
+
+```bash
+# Correct - quoted URL with query params
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto "https://example.com/search?q=test&page=2"
+
+# Wrong - unquoted ? and & cause shell errors
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto https://example.com/search?q=test&page=2
+```
+
+Safe practice: always double-quote URL arguments.
+
 ## Action Reference
 
 ### goto - Navigate to URL
@@ -442,7 +456,7 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run mysession click "role=button[name='Si
 
 ```bash
 # Navigate
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run session goto https://example.com
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run session goto "https://example.com"
 
 # Understand page
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run session snapshot

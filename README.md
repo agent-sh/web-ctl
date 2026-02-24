@@ -57,8 +57,8 @@ Describe what you want to do; the web-session agent orchestrates multi-step brow
 Human-in-the-loop authentication. Opens a headed browser for the user to complete login (including 2FA), then captures and encrypts the session.
 
 ```
-/web-ctl:web-auth github --url https://github.com/login
-/web-ctl:web-auth twitter --url https://x.com/i/flow/login --success-url https://x.com/home
+/web-ctl:web-auth github --url "https://github.com/login"
+/web-ctl:web-auth twitter --url "https://x.com/i/flow/login" --success-url "https://x.com/home"
 ```
 
 ### `/web-ctl:web-browse`
@@ -66,7 +66,7 @@ Human-in-the-loop authentication. Opens a headed browser for the user to complet
 Headless browser actions for navigation and interaction.
 
 ```
-/web-ctl:web-browse github goto https://github.com
+/web-ctl:web-browse github goto "https://github.com"
 /web-ctl:web-browse github click "role=link[name='Settings']"
 /web-ctl:web-browse github click-wait "role=button[name='Save']"
 /web-ctl:web-browse github snapshot
@@ -79,10 +79,10 @@ Headless browser actions for navigation and interaction.
 web-ctl session start github
 
 # 2. Authenticate (opens headed browser, user logs in)
-web-ctl session auth github --url https://github.com/login --success-url https://github.com
+web-ctl session auth github --url "https://github.com/login" --success-url "https://github.com"
 
 # 3. Browse headlessly (session cookies persist across invocations)
-web-ctl run github goto https://github.com/settings
+web-ctl run github goto "https://github.com/settings"
 web-ctl run github snapshot
 web-ctl run github click "role=link[name='Profile']"
 
