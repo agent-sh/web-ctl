@@ -86,12 +86,13 @@ function collapseRepeated(snapshot) {
 
   const lines = snapshot.split('\n');
 
+  const typeRe = /^- (\S+)/;
   const parsed = lines.map(line => {
     let spaces = 0;
     while (spaces < line.length && line[spaces] === ' ') spaces++;
     const depth = Math.floor(spaces / 2);
     const content = line.slice(spaces);
-    const typeMatch = content.match(/^- (\S+)/);
+    const typeMatch = content.match(typeRe);
     const type = typeMatch ? typeMatch[1] : null;
     return { depth, type, raw: line };
   });
@@ -127,16 +128,17 @@ function collapseRepeated(snapshot) {
         for (let s = 0; s < 2; s++) {
           out.push(parsed[siblings[s].start].raw);
           const childLines = processRange(siblings[s].start + 1, siblings[s].end);
-          out.push(...childLines);
+          for (const cl of childLines) out.push(cl);
         }
         const collapsed = siblings.length - 2;
-        const indent = ' '.repeat(current.depth * 2);
+        const safeDepth = Math.min(current.depth, 500);
+        const indent = ' '.repeat(safeDepth * 2);
         out.push(`${indent}- ... (${collapsed} more ${current.type})`);
       } else {
         for (let s = 0; s < siblings.length; s++) {
           out.push(parsed[siblings[s].start].raw);
           const childLines = processRange(siblings[s].start + 1, siblings[s].end);
-          out.push(...childLines);
+          for (const cl of childLines) out.push(cl);
         }
       }
       i = j;
@@ -159,14 +161,15 @@ function textOnly(snapshot) {
 
   const lines = snapshot.split('\n');
   const kept = [];
+  const typeRe = /^- (\S+)/;
 
   for (const line of lines) {
     let spaces = 0;
     while (spaces < line.length && line[spaces] === ' ') spaces++;
     const content = line.slice(spaces);
-    const typeMatch = content.match(/^- (\S+)/);
+    const typeMatch = content.match(typeRe);
     const type = typeMatch ? typeMatch[1] : null;
-    const hasLabel = /"[^"]*"/.test(content);
+    const hasLabel = content.includes('"');
 
     if (!type || !STRUCTURAL_TYPES.has(type) || hasLabel) {
       kept.push({ depth: Math.floor(spaces / 2), raw: line, content });
@@ -191,7 +194,8 @@ function textOnly(snapshot) {
     }
 
     depthStack.push({ originalDepth: entry.depth, outputDepth });
-    const indent = ' '.repeat(outputDepth * 2);
+    const safeDepth = Math.min(outputDepth, 500);
+    const indent = ' '.repeat(safeDepth * 2);
     result.push(`${indent}${entry.content}`);
   }
 
@@ -505,6 +509,10 @@ describe('trimByLines', () => {
     assert.equal(trimByLines(input, 2), input);
   });
 
+  it('handles empty string', () => {
+    assert.equal(trimByLines('', 1), '');
+  });
+
   it('maxLines of 1', () => {
     const input = '- heading "Title"\n- link "Home"\n- link "About"';
     const result = trimByLines(input, 1);
@@ -548,6 +556,26 @@ describe('collapseRepeated', () => {
       '  - link "About"'
     ].join('\n');
     assert.equal(collapseRepeated(input), input);
+  });
+
+  it('handles empty string', () => {
+    assert.equal(collapseRepeated(''), '');
+  });
+
+  it('collapses exactly 3 siblings (boundary case)', () => {
+    const input = [
+      '- listitem',
+      '  - link "A"',
+      '- listitem',
+      '  - link "B"',
+      '- listitem',
+      '  - link "C"'
+    ].join('\n');
+    const result = collapseRepeated(input);
+    assert.ok(result.includes('link "A"'));
+    assert.ok(result.includes('link "B"'));
+    assert.ok(!result.includes('link "C"'));
+    assert.ok(result.includes('- ... (1 more listitem)'));
   });
 
   it('collapses 5 listitem siblings to 2 + marker', () => {
@@ -800,10 +828,14 @@ describe('getSnapshot pipeline', () => {
       snapshotMaxLines: 3
     });
     const lines = result.split('\n');
-    // After depth 4: all kept (max depth is 3 here)
-    // After collapse: 2 listitem + marker + heading
-    // After text-only: links from kept listitems + marker + heading
-    // After max-lines 3: first 3 lines + marker
+    // After depth 4: all kept (max depth is 3)
+    // After collapse: 2 listitem kept + collapse marker + heading
+    // After text-only: link "A", link "B", collapse marker, heading "Title"
+    // After max-lines 3: first 3 lines + "... (1 more lines)"
     assert.ok(lines.length <= 4, `Expected <= 4 lines, got ${lines.length}`);
+    assert.ok(result.includes('link "A"'), 'first kept sibling link should survive');
+    assert.ok(result.includes('link "B"'), 'second kept sibling link should survive');
+    assert.ok(!result.includes('- main'), 'structural main should be stripped by text-only');
+    assert.ok(!result.includes('- list\n'), 'structural list should be stripped by text-only');
   });
 });

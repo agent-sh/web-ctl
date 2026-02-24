@@ -189,13 +189,14 @@ function collapseRepeated(snapshot) {
   const lines = snapshot.split('\n');
 
   // Parse each line into { depth, type, raw }
+  const typeRe = /^- (\S+)/;
   const parsed = lines.map(line => {
     let spaces = 0;
     while (spaces < line.length && line[spaces] === ' ') spaces++;
     const depth = Math.floor(spaces / 2);
     const content = line.slice(spaces);
     // Extract type: first word after "- "
-    const typeMatch = content.match(/^- (\S+)/);
+    const typeMatch = content.match(typeRe);
     const type = typeMatch ? typeMatch[1] : null;
     return { depth, type, raw: line };
   });
@@ -235,17 +236,18 @@ function collapseRepeated(snapshot) {
           out.push(parsed[siblings[s].start].raw);
           // Recursively process children of this sibling
           const childLines = processRange(siblings[s].start + 1, siblings[s].end);
-          out.push(...childLines);
+          for (const cl of childLines) out.push(cl);
         }
         const collapsed = siblings.length - 2;
-        const indent = ' '.repeat(current.depth * 2);
+        const safeDepth = Math.min(current.depth, 500);
+        const indent = ' '.repeat(safeDepth * 2);
         out.push(`${indent}- ... (${collapsed} more ${current.type})`);
       } else {
         // 2 or fewer siblings - output parent, recursively process children
         for (let s = 0; s < siblings.length; s++) {
           out.push(parsed[siblings[s].start].raw);
           const childLines = processRange(siblings[s].start + 1, siblings[s].end);
-          out.push(...childLines);
+          for (const cl of childLines) out.push(cl);
         }
       }
       i = j;
@@ -276,14 +278,15 @@ function textOnly(snapshot) {
 
   const lines = snapshot.split('\n');
   const kept = [];
+  const typeRe = /^- (\S+)/;
 
   for (const line of lines) {
     let spaces = 0;
     while (spaces < line.length && line[spaces] === ' ') spaces++;
     const content = line.slice(spaces);
-    const typeMatch = content.match(/^- (\S+)/);
+    const typeMatch = content.match(typeRe);
     const type = typeMatch ? typeMatch[1] : null;
-    const hasLabel = /"[^"]*"/.test(content);
+    const hasLabel = content.includes('"');
 
     if (!type || !STRUCTURAL_TYPES.has(type) || hasLabel) {
       kept.push({ depth: Math.floor(spaces / 2), raw: line, content });
@@ -312,7 +315,8 @@ function textOnly(snapshot) {
     }
 
     depthStack.push({ originalDepth: entry.depth, outputDepth });
-    const indent = ' '.repeat(outputDepth * 2);
+    const safeDepth = Math.min(outputDepth, 500);
+    const indent = ' '.repeat(safeDepth * 2);
     result.push(`${indent}${entry.content}`);
   }
 
