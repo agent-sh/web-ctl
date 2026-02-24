@@ -752,7 +752,9 @@ Macros (higher-level actions):
     [--max-items N]             Max items to collect (default: 100, max: 500)
   extract --selector <sel>     Extract structured data from repeated elements
     --fields <f1,f2,...>          Fields to extract (default: title,url,text)
-    [--max-items N] [--auto]     Auto-detect mode finds repeated patterns
+    [--max-items N]               Max items to extract (default: 100, max: 500)
+    [--max-field-length N]        Max chars per field (default: 500, max: 2000)
+    [--auto]                      Auto-detect mode finds repeated patterns
 
 Snapshot options (apply to any action that returns a snapshot):
   --snapshot-depth <N>          Limit ARIA tree depth (e.g. 3 for top 3 levels)
