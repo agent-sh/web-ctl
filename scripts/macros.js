@@ -832,29 +832,32 @@ async function extract(page, actionArgs, opts, helpers) {
 
     function getTableHeaders(group) {
       var tableEl = group.parent;
-      while (tableEl && tableEl.tagName !== 'TABLE') {
+      var depth = 0;
+      while (tableEl && tableEl.tagName !== 'TABLE' && depth++ < 10) {
         tableEl = tableEl.parentElement;
       }
-      if (!tableEl) return null;
+      if (!tableEl || tableEl.tagName !== 'TABLE') return null;
 
       var headers = [];
       var headerRow = null;
 
-      var thead = tableEl.querySelector('thead');
+      var thead = null;
+      var tableChildren = tableEl.children;
+      for (var tc = 0; tc < tableChildren.length; tc++) {
+        if (tableChildren[tc].tagName === 'THEAD') { thead = tableChildren[tc]; break; }
+      }
       if (thead) {
-        var firstTR = thead.querySelector('tr');
-        if (firstTR) {
-          var ths = firstTR.querySelectorAll('th');
-          if (ths.length > 0) {
-            for (var i = 0; i < ths.length; i++) {
-              // Skip tables with colspan > 1 on any header
-              var colspan = ths[i].getAttribute('colspan');
-              if (colspan && parseInt(colspan, 10) > 1) return null;
-              var text = (ths[i].textContent || '').trim();
-              headers.push(text || ('column_' + (i + 1)));
-            }
-            headerRow = firstTR;
+        var firstTR = thead.children[0];
+        if (firstTR && firstTR.tagName === 'TR') {
+          var ths = firstTR.children;
+          for (var i = 0; i < ths.length; i++) {
+            if (ths[i].tagName !== 'TH') continue;
+            var colspan = ths[i].getAttribute('colspan');
+            if (colspan && parseInt(colspan, 10) > 1) return null;
+            var text = (ths[i].textContent || '').trim();
+            headers.push(text || ('column_' + (i + 1)));
           }
+          if (headers.length > 0) headerRow = firstTR;
         }
       }
 
@@ -869,7 +872,7 @@ async function extract(page, actionArgs, opts, helpers) {
             break;
           }
         }
-        if (allTH && children.length > 0) {
+        if (allTH) {
           for (var m = 0; m < children.length; m++) {
             var cs = children[m].getAttribute('colspan');
             if (cs && parseInt(cs, 10) > 1) return null;
@@ -993,12 +996,15 @@ async function extract(page, actionArgs, opts, helpers) {
 
     function extractTableRow(tr, headers) {
       var item = {};
-      var tds = tr.querySelectorAll('td');
-      for (var i = 0; i < tds.length && i < headers.length; i++) {
-        var cellText = truncate((tds[i].textContent || '').trim());
+      var cells = tr.children;
+      var hi = 0;
+      for (var i = 0; i < cells.length && hi < headers.length; i++) {
+        if (cells[i].tagName !== 'TD') continue;
+        var cellText = truncate((cells[i].textContent || '').trim());
         if (cellText) {
-          item[headers[i]] = cellText;
+          item[headers[hi]] = cellText;
         }
+        hi++;
       }
       var a = tr.querySelector('a[href]');
       if (a) item.url = a.getAttribute('href');
