@@ -107,6 +107,62 @@ describe('redactSecrets', () => {
     const text = 'Hello, this is normal text with no secrets.';
     assert.equal(redactSecrets(text), text);
   });
+
+  it('redacts actual URL credentials', () => {
+    const result = redactSecrets('https://user:password@host.com/path');
+    assert.equal(result, 'https://[REDACTED]:[REDACTED]@host.com/path');
+  });
+
+  it('redacts OAuth tokens in URLs', () => {
+    const result = redactSecrets('https://oauth2:ghp_token123456@github.com/repo');
+    assert.equal(result, 'https://[REDACTED]:[REDACTED]@github.com/repo');
+  });
+
+  it('preserves public URLs with ports', () => {
+    const url = 'https://github.com:443/users/someone';
+    assert.equal(redactSecrets(url), url);
+  });
+
+  it('preserves public URLs when email exists nearby', () => {
+    const text = 'Visit https://example.com/path and contact user@example.com';
+    assert.equal(redactSecrets(text), text);
+  });
+
+  it('redacts credentials in URLs with query params and fragments', () => {
+    assert.equal(
+      redactSecrets('https://user:pass1234@host.com?key=val'),
+      'https://[REDACTED]:[REDACTED]@host.com?key=val'
+    );
+    assert.equal(
+      redactSecrets('https://user:pass1234@host.com#section'),
+      'https://[REDACTED]:[REDACTED]@host.com#section'
+    );
+  });
+
+  it('redacts percent-encoded credentials', () => {
+    const result = redactSecrets('https://user%40domain:p%40ss1234@host.com/path');
+    assert.equal(result, 'https://[REDACTED]:[REDACTED]@host.com/path');
+  });
+
+  it('does not redact passwords shorter than 4 characters', () => {
+    const url = 'https://user:abc@host.com';
+    assert.equal(redactSecrets(url), url);
+  });
+
+  it('redacts only credentialed URL when mixed with public URL', () => {
+    const text = 'Connect to https://admin:secret99@db1.com and https://db2.com:5432/prod';
+    const expected = 'Connect to https://[REDACTED]:[REDACTED]@db1.com and https://db2.com:5432/prod';
+    assert.equal(redactSecrets(text), expected);
+  });
+
+  it('preserves multiline ARIA snapshots', () => {
+    const text = [
+      'link "Home" https://example.com/home',
+      'link "About" https://example.com/about',
+      'text "Contact us @ support"',
+    ].join('\n');
+    assert.equal(redactSecrets(text), text);
+  });
 });
 
 describe('wrapOutput', () => {

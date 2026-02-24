@@ -25,6 +25,7 @@
 - Security hardening across macro implementations: input validation, path traversal prevention, credential hygiene
 - `date-pick` validates YYYY-MM-DD format and rejects out-of-range dates before opening the calendar
 - `wait-toast` validates `--timeout` is a positive integer
+- URL credential redaction regex no longer false-positives on port numbers (e.g., `host:443/path`) or multi-line content with `@` characters (#30)
 
 ## 1.0.0
 
