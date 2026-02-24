@@ -969,7 +969,7 @@ async function extract(page, actionArgs, opts, helpers) {
         }
         var cls = '';
         if (node.className && typeof node.className === 'string') {
-          var classes = node.className.trim().split(/\s+/).slice(0, 2);
+          var classes = node.className.trim().split(/\s+/).filter(Boolean).slice(0, 2);
           cls = classes.map(function(c) { return '.' + escapeCSS(c); }).join('');
         }
         parts.unshift(nTag + cls);
@@ -1096,7 +1096,9 @@ const macros = {
   'extract': extract
 };
 
-// Standalone copies for unit testing (no browser APIs)
+// Standalone copies for unit testing (no browser APIs).
+// IMPORTANT: Keep in sync with the identical functions inside
+// the extract macro's page.evaluate callback (lines ~950-980).
 function escapeCSS(s) {
   return s.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
 }
@@ -1121,7 +1123,7 @@ function buildSelector(ancestors, tag) {
     }
     var cls = '';
     if (node.className && typeof node.className === 'string') {
-      var classes = node.className.trim().split(/\s+/).slice(0, 2);
+      var classes = node.className.trim().split(/\s+/).filter(Boolean).slice(0, 2);
       cls = classes.map(function(c) { return '.' + escapeCSS(c); }).join('');
     }
     parts.unshift(nTag + cls);
