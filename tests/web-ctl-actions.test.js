@@ -412,3 +412,129 @@ describe('web-ctl navigation state persistence', () => {
     );
   });
 });
+
+describe('auto-create session on first run command', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const webCtlSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+    'utf8'
+  );
+
+  it('runAction calls createSession when session not found', () => {
+    assert.ok(
+      webCtlSource.includes('sessionStore.createSession(sessionName)'),
+      'runAction should call createSession for auto-creation'
+    );
+  });
+
+  it('sets autoCreated flag on successful auto-creation', () => {
+    assert.ok(
+      webCtlSource.includes('autoCreated = true'),
+      'runAction should set autoCreated = true after creating session'
+    );
+  });
+
+  it('includes autoCreated in success output', () => {
+    assert.ok(
+      webCtlSource.includes("...(autoCreated && { autoCreated: true }), result"),
+      'success output should conditionally include autoCreated'
+    );
+  });
+
+  it('includes autoCreated in error output', () => {
+    const errorOutputPattern = /\.\.\.\(autoCreated && \{ autoCreated: true \}\),\s*\n\s*\.\.\.classified/;
+    assert.ok(
+      errorOutputPattern.test(webCtlSource),
+      'error output should conditionally include autoCreated before classified'
+    );
+  });
+
+  it('handles race condition with catch-and-retry', () => {
+    assert.ok(
+      webCtlSource.includes('// Race condition: another process created it between get and create'),
+      'catch block should handle race condition with retry'
+    );
+    // Verify the retry pattern: catch block calls getSession again
+    const catchBlock = webCtlSource.indexOf('// Race condition:');
+    const retryGet = webCtlSource.indexOf('session = sessionStore.getSession(sessionName)', catchBlock);
+    assert.ok(retryGet > catchBlock && retryGet - catchBlock < 200,
+      'catch block should retry getSession after failed createSession'
+    );
+  });
+
+  it('uses let instead of const for session variable', () => {
+    assert.ok(
+      webCtlSource.includes('let session = sessionStore.getSession(sessionName)'),
+      'session should be declared with let to allow reassignment'
+    );
+  });
+});
+
+describe('auto-create session CLI integration', () => {
+  const { beforeEach, afterEach } = require('node:test');
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  const { execFileSync } = require('child_process');
+
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-ctl-autocreate-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function runCliSafe(...args) {
+    try {
+      const result = execFileSync(process.execPath, [
+        path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+        ...args
+      ], {
+        env: { ...process.env, AI_STATE_DIR: tmpDir },
+        encoding: 'utf8',
+        timeout: 10000
+      });
+      return JSON.parse(result);
+    } catch (err) {
+      if (err.stdout) {
+        try { return JSON.parse(err.stdout); } catch { /* fall through */ }
+      }
+      throw err;
+    }
+  }
+
+  it('auto-creates session on run command instead of session_not_found', () => {
+    const result = runCliSafe('run', 'newsession', 'goto', 'https://example.com');
+    // The action will fail (no playwright), but it must NOT be session_not_found
+    assert.notEqual(result.error, 'session_not_found',
+      'run should auto-create session, not return session_not_found');
+  });
+
+  it('creates session directory on disk during auto-create', () => {
+    runCliSafe('run', 'newsession', 'goto', 'https://example.com');
+    const sessionDir = path.join(tmpDir, 'web-ctl', 'sessions', 'newsession');
+    assert.ok(fs.existsSync(sessionDir),
+      'session directory should exist after auto-create');
+    assert.ok(fs.existsSync(path.join(sessionDir, 'metadata.json')),
+      'metadata.json should exist after auto-create');
+  });
+
+  it('sets autoCreated flag in response', () => {
+    const result = runCliSafe('run', 'newsession', 'goto', 'https://example.com');
+    assert.equal(result.autoCreated, true,
+      'response should include autoCreated: true');
+  });
+
+  it('does not auto-create when session already exists', () => {
+    // First call auto-creates
+    runCliSafe('run', 'existing', 'goto', 'https://example.com');
+    // Second call should reuse the existing session
+    const result = runCliSafe('run', 'existing', 'goto', 'https://example.com');
+    assert.equal(result.autoCreated, undefined,
+      'response should not include autoCreated when session already exists');
+  });
+});
