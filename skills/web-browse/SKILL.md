@@ -346,7 +346,9 @@ Auto-detect mode also returns the detected CSS selector, which can be reused wit
 
 ## Snapshot Control
 
-All actions that return a snapshot support these flags to control output size:
+All actions that return a snapshot support these flags to control output size.
+
+By default, snapshots are auto-scoped to the main content area of the page. The tool looks for a `<main>` element, then `[role="main"]`, and falls back to `<body>` if neither exists. This automatically excludes navigation, headers, and footers from snapshots, reducing noise and token usage. Use `--snapshot-full` to capture the full page body when needed, or `--snapshot-selector` to scope to a specific element.
 
 ### --snapshot-depth N - Limit Tree Depth
 
@@ -365,6 +367,15 @@ node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> click "#btn" --snapshot-sel
 ```
 
 Takes the snapshot from a specific DOM subtree instead of the full body. Accepts the same selector syntax as other actions.
+
+### --snapshot-full - Full Page Snapshot
+
+```bash
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> --snapshot-full
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> snapshot --snapshot-full
+```
+
+Bypasses the default auto-scoping to `<main>` and captures the full page body instead. Use this when you need to see navigation, headers, footers, or other content outside the main content area.
 
 ### --no-snapshot - Omit Snapshot
 
