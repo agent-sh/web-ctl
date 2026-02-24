@@ -958,15 +958,15 @@ Selector syntax:
 Examples:
   web-ctl session start github
   web-ctl session auth github --provider github
-  web-ctl session auth github --url https://github.com/login
+  web-ctl session auth github --url "https://github.com/login"
   web-ctl session providers
-  web-ctl run github goto https://github.com
+  web-ctl run github goto "https://github.com"
   web-ctl run github snapshot
   web-ctl run github click "role=link[name='Settings']"
   web-ctl run github click-wait "role=button[name='Save']"
   web-ctl run github click "role=tab[name='Code']" --wait-stable
   web-ctl run github snapshot --snapshot-depth 3
-  web-ctl run github goto https://github.com --snapshot-selector "css=nav"
+  web-ctl run github goto "https://github.com" --snapshot-selector "css=nav"
   web-ctl run github click "#btn" --no-snapshot
   web-ctl run github snapshot --snapshot-collapse
   web-ctl run github snapshot --snapshot-text-only --snapshot-max-lines 50
