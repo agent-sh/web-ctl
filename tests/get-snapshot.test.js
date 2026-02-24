@@ -32,6 +32,7 @@ async function getSnapshot(page, opts = {}) {
     const raw = await root.ariaSnapshot();
     let result = raw;
     if (opts.snapshotDepth) result = trimByDepth(result, opts.snapshotDepth);
+    if (opts.snapshotCompact) result = compactFormat(result);
     if (opts.snapshotCollapse) result = collapseRepeated(result);
     if (opts.snapshotTextOnly) result = textOnly(result);
     if (opts.snapshotMaxLines) result = trimByLines(result, opts.snapshotMaxLines);
@@ -201,6 +202,442 @@ function textOnly(snapshot) {
 
   return result.join('\n');
 }
+
+// Keep this in sync with scripts/web-ctl.js.
+function compactFormat(snapshot) {
+  if (snapshot == null) return snapshot;
+  if (typeof snapshot === 'string' && snapshot.startsWith('(')) return snapshot;
+
+  let lines = snapshot.split('\n');
+
+  // --- Pass 1: Link collapsing ---
+  const linkCollapsed = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
+    const content = line.slice(spaces);
+
+    const linkMatch = content.match(/^- link "([^"]+)":/);
+    if (linkMatch) {
+      const parentDepth = Math.floor(spaces / 2);
+
+      const children = [];
+      let j = i + 1;
+      while (j < lines.length) {
+        let cs = 0;
+        while (cs < lines[j].length && lines[j][cs] === ' ') cs++;
+        if (Math.floor(cs / 2) > parentDepth) {
+          children.push({ index: j, line: lines[j], depth: Math.floor(cs / 2) });
+          j++;
+        } else {
+          break;
+        }
+      }
+
+      const urlChildIdx = children.findIndex(c =>
+        c.depth === parentDepth + 1 && c.line.trim().match(/^- \/url: (\S+)/)
+      );
+
+      if (urlChildIdx !== -1) {
+        const urlMatch = children[urlChildIdx].line.trim().match(/^- \/url: (\S+)/);
+        const url = urlMatch[1];
+        const otherChildren = children.filter((_, idx) => idx !== urlChildIdx);
+
+        if (otherChildren.length === 0) {
+          linkCollapsed.push(`${' '.repeat(spaces)}- link "${linkMatch[1]}" -> ${url}`);
+        } else {
+          linkCollapsed.push(`${' '.repeat(spaces)}- link "${linkMatch[1]}" -> ${url}:`);
+          for (const child of otherChildren) {
+            linkCollapsed.push(child.line);
+          }
+        }
+        i = j;
+        continue;
+      }
+    }
+
+    linkCollapsed.push(line);
+    i++;
+  }
+  lines = linkCollapsed;
+
+  // --- Pass 2: Heading inlining ---
+  const headingInlined = [];
+  i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
+    const content = line.slice(spaces);
+
+    const headingMatch = content.match(/^- heading "([^"]+)" \[level=(\d+)\]:/);
+    if (headingMatch) {
+      const parentDepth = Math.floor(spaces / 2);
+
+      const children = [];
+      let j = i + 1;
+      while (j < lines.length) {
+        let cs = 0;
+        while (cs < lines[j].length && lines[j][cs] === ' ') cs++;
+        if (Math.floor(cs / 2) > parentDepth) {
+          children.push({ index: j, line: lines[j], depth: Math.floor(cs / 2) });
+          j++;
+        } else {
+          break;
+        }
+      }
+
+      const directChildren = children.filter(c => c.depth === parentDepth + 1);
+      if (directChildren.length === 1) {
+        const childContent = directChildren[0].line.trim();
+        const linkArrowMatch = childContent.match(/^- link "([^"]+)" -> (\S+)$/);
+        if (linkArrowMatch) {
+          headingInlined.push(`${' '.repeat(spaces)}- heading [h${headingMatch[2]}] "${headingMatch[1]}" -> ${linkArrowMatch[2]}`);
+          i = j;
+          continue;
+        }
+        const linkPlainMatch = childContent.match(/^- link "([^"]+)"$/);
+        if (linkPlainMatch) {
+          headingInlined.push(`${' '.repeat(spaces)}- heading [h${headingMatch[2]}] "${headingMatch[1]}"`);
+          i = j;
+          continue;
+        }
+      }
+    }
+
+    headingInlined.push(line);
+    i++;
+  }
+  lines = headingInlined;
+
+  // --- Pass 3: Decorative image removal ---
+  const imagesFiltered = [];
+  i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
+    const content = line.slice(spaces);
+
+    const imgMatch = content.match(/^- img(?:\s+"([^"]*)")?/);
+    if (imgMatch) {
+      const altText = imgMatch[1] || '';
+      if (altText.length <= 1) {
+        const parentDepth = Math.floor(spaces / 2);
+        let j = i + 1;
+        while (j < lines.length) {
+          let cs = 0;
+          while (cs < lines[j].length && lines[j][cs] === ' ') cs++;
+          if (Math.floor(cs / 2) > parentDepth) {
+            j++;
+          } else {
+            break;
+          }
+        }
+        i = j;
+        continue;
+      }
+    }
+
+    imagesFiltered.push(line);
+    i++;
+  }
+  lines = imagesFiltered;
+
+  // --- Pass 4: Duplicate URL dedup ---
+  const deduped = [];
+  const seenUrls = new Map();
+  let prevDepth = -1;
+
+  for (i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    let spaces = 0;
+    while (spaces < line.length && line[spaces] === ' ') spaces++;
+    const depth = Math.floor(spaces / 2);
+
+    if (depth < prevDepth) {
+      for (const [d] of seenUrls) {
+        if (d > depth) seenUrls.delete(d);
+      }
+    }
+    prevDepth = depth;
+
+    const urlArrowMatch = line.match(/ -> (\/\S+|https?:\/\/\S+)/);
+    if (urlArrowMatch) {
+      const url = urlArrowMatch[1];
+      if (!seenUrls.has(depth)) seenUrls.set(depth, new Set());
+      const depthSet = seenUrls.get(depth);
+      if (depthSet.has(url)) {
+        let j = i + 1;
+        while (j < lines.length) {
+          let cs = 0;
+          while (cs < lines[j].length && lines[j][cs] === ' ') cs++;
+          if (Math.floor(cs / 2) > depth) {
+            j++;
+          } else {
+            break;
+          }
+        }
+        i = j - 1;
+        continue;
+      }
+      depthSet.add(url);
+    }
+
+    deduped.push(line);
+  }
+
+  return deduped.join('\n');
+}
+
+// ============ compactFormat tests ============
+
+describe('compactFormat', () => {
+  it('passes through null', () => {
+    assert.equal(compactFormat(null), null);
+  });
+
+  it('passes through undefined', () => {
+    assert.equal(compactFormat(undefined), undefined);
+  });
+
+  it('passes through fallback strings starting with (', () => {
+    const fallback = '(accessibility tree unavailable - crashed)';
+    assert.equal(compactFormat(fallback), fallback);
+  });
+
+  it('passes through empty string', () => {
+    assert.equal(compactFormat(''), '');
+  });
+
+  // --- Link collapsing ---
+
+  it('collapses link with /url child into single line', () => {
+    const input = [
+      '- link "Home":',
+      '  - /url: /home'
+    ].join('\n');
+    assert.equal(compactFormat(input), '- link "Home" -> /home');
+  });
+
+  it('preserves link without /url child', () => {
+    const input = '- link "Home"';
+    assert.equal(compactFormat(input), input);
+  });
+
+  it('keeps extra children when link has /url plus others', () => {
+    const input = [
+      '- link "Dashboard":',
+      '  - /url: /dash',
+      '  - img "icon"'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(result.includes('- link "Dashboard" -> /dash:'));
+    assert.ok(result.includes('  - img "icon"'));
+    assert.ok(!result.includes('/url:'));
+  });
+
+  it('collapses nested link inside a list', () => {
+    const input = [
+      '- list:',
+      '  - listitem:',
+      '    - link "About":',
+      '      - /url: /about'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(result.includes('    - link "About" -> /about'));
+    assert.ok(!result.includes('/url:'));
+  });
+
+  // --- Heading inlining ---
+
+  it('inlines heading with single link child', () => {
+    const input = [
+      '- heading "Getting Started" [level=2]:',
+      '  - link "Getting Started" -> /docs/start'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.equal(result, '- heading [h2] "Getting Started" -> /docs/start');
+  });
+
+  it('preserves heading with multiple children', () => {
+    const input = [
+      '- heading "Title" [level=1]:',
+      '  - link "Link 1"',
+      '  - link "Link 2"'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(result.includes('- heading "Title" [level=1]:'));
+    assert.ok(result.includes('  - link "Link 1"'));
+    assert.ok(result.includes('  - link "Link 2"'));
+  });
+
+  it('preserves heading without level attribute', () => {
+    const input = [
+      '- heading "Title":',
+      '  - link "Click"'
+    ].join('\n');
+    // No [level=N] means the regex won't match, so heading stays as-is
+    assert.equal(compactFormat(input), input);
+  });
+
+  it('inlines heading with plain link child (no URL)', () => {
+    const input = [
+      '- heading "Section" [level=3]:',
+      '  - link "Section"'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.equal(result, '- heading [h3] "Section"');
+  });
+
+  // --- Decorative image removal ---
+
+  it('removes img with empty name', () => {
+    const input = [
+      '- heading "Title"',
+      '- img',
+      '- link "More"'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(!result.includes('- img'));
+    assert.ok(result.includes('- heading "Title"'));
+    assert.ok(result.includes('- link "More"'));
+  });
+
+  it('removes img with single-char alt text', () => {
+    const input = [
+      '- img "x"',
+      '- paragraph "Content"'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(!result.includes('img'));
+    assert.ok(result.includes('paragraph "Content"'));
+  });
+
+  it('preserves img with meaningful alt text', () => {
+    const input = '- img "Product screenshot"';
+    assert.equal(compactFormat(input), input);
+  });
+
+  it('removes decorative img and its children', () => {
+    const input = [
+      '- img "":',
+      '  - text "caption"',
+      '- link "Next"'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(!result.includes('img'));
+    assert.ok(!result.includes('caption'));
+    assert.ok(result.includes('- link "Next"'));
+  });
+
+  // --- Duplicate URL dedup ---
+
+  it('removes second occurrence of same URL at same depth', () => {
+    const input = [
+      '- link "Home" -> /home',
+      '- link "Home Again" -> /home'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(result.includes('- link "Home" -> /home'));
+    assert.ok(!result.includes('Home Again'));
+  });
+
+  it('keeps same URL at different depths', () => {
+    const input = [
+      '- link "Home" -> /home',
+      '- list:',
+      '  - link "Home" -> /home'
+    ].join('\n');
+    const result = compactFormat(input);
+    const homeCount = (result.match(/-> \/home/g) || []).length;
+    assert.equal(homeCount, 2);
+  });
+
+  it('resets dedup tracking when depth decreases', () => {
+    const input = [
+      '- navigation:',
+      '  - link "About" -> /about',
+      '- main:',
+      '  - link "About" -> /about'
+    ].join('\n');
+    const result = compactFormat(input);
+    const aboutCount = (result.match(/-> \/about/g) || []).length;
+    assert.equal(aboutCount, 2, 'URL should appear twice since depth scope reset between nav and main');
+  });
+
+  // --- Combination test ---
+
+  it('applies all transforms on realistic page snippet', () => {
+    const input = [
+      '- navigation "Main":',
+      '  - link "Home":',
+      '    - /url: /home',
+      '  - link "About":',
+      '    - /url: /about',
+      '  - img ""',
+      '- main:',
+      '  - heading "Welcome" [level=1]:',
+      '    - link "Welcome" -> /home',
+      '  - img "x"',
+      '  - link "About" -> /about',
+      '  - img "Team photo"',
+      '  - paragraph "Hello world"'
+    ].join('\n');
+    const result = compactFormat(input);
+    // Links collapsed
+    assert.ok(result.includes('  - link "Home" -> /home'));
+    assert.ok(result.includes('  - link "About" -> /about'));
+    assert.ok(!result.includes('/url:'));
+    // Heading inlined (but /home is duplicate at depth 1 from nav, so heading gets deduped)
+    // Actually heading is at depth 1, nav links are at depth 1 too, so /home is a dup at depth 1
+    // The heading inline fires first (pass 2), then dedup (pass 4) removes the dup
+    assert.ok(!result.includes('img ""'), 'empty alt img removed');
+    assert.ok(!result.includes('img "x"'), 'single char alt img removed');
+    assert.ok(result.includes('img "Team photo"'), 'meaningful alt preserved');
+    assert.ok(result.includes('paragraph "Hello world"'));
+  });
+
+  // --- Edge cases ---
+
+  it('handles blank lines in input', () => {
+    const input = [
+      '- link "Home":',
+      '  - /url: /home',
+      '',
+      '- link "About":',
+      '  - /url: /about'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(result.includes('- link "Home" -> /home'));
+    assert.ok(result.includes('- link "About" -> /about'));
+  });
+
+  it('link collapse feeds into heading inline', () => {
+    // Pass 1 collapses link, Pass 2 inlines heading with the collapsed link
+    const input = [
+      '- heading "Docs" [level=2]:',
+      '  - link "Docs":',
+      '    - /url: /docs'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.equal(result, '- heading [h2] "Docs" -> /docs');
+  });
+
+  it('deduplicates URLs produced by link collapsing', () => {
+    const input = [
+      '- link "Home":',
+      '  - /url: /home',
+      '- link "Home link":',
+      '  - /url: /home'
+    ].join('\n');
+    const result = compactFormat(input);
+    assert.ok(result.includes('- link "Home" -> /home'));
+    assert.ok(!result.includes('Home link'), 'duplicate URL removed after collapse');
+  });
+});
 
 // ============ trimByDepth tests ============
 
@@ -808,8 +1245,29 @@ describe('getSnapshot pipeline', () => {
     assert.equal(lines[2], '... (3 more lines)');
   });
 
+  it('applies snapshotCompact when set', async () => {
+    const snapshot = [
+      '- link "Home":',
+      '  - /url: /home',
+      '- img ""',
+      '- heading "News" [level=2]:',
+      '  - link "News" -> /news',
+      '- paragraph "Content"'
+    ].join('\n');
+    const result = await getSnapshot(makeMockPage(snapshot), { snapshotCompact: true });
+    // Links collapsed
+    assert.ok(result.includes('- link "Home" -> /home'));
+    assert.ok(!result.includes('/url:'));
+    // Decorative img removed
+    assert.ok(!result.includes('img ""'));
+    // Heading inlined
+    assert.ok(result.includes('- heading [h2] "News" -> /news'));
+    // Content preserved
+    assert.ok(result.includes('paragraph "Content"'));
+  });
+
   it('chains all options together', async () => {
-    // depth -> collapse -> text-only -> max-lines
+    // depth -> compact -> collapse -> text-only -> max-lines
     const snapshot = [
       '- main',
       '  - list',
