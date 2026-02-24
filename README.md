@@ -125,8 +125,8 @@ web-ctl session end github
 | `login` | `run <s> login --user <u> --pass <p>` | `{ url, loggedIn, snapshot }` |
 | `next-page` | `run <s> next-page` | `{ url, previousUrl, nextPageDetected, snapshot }` |
 | `paginate` | `run <s> paginate --selector <sel> [--max-pages N] [--max-items N]` | `{ url, startUrl, pages, totalItems, items, hasMore, snapshot }` |
-| `extract` | `run <s> extract --selector <sel> [--fields f1,f2] [--max-items N]` | `{ url, mode, selector, fields, count, items, snapshot }` |
-| `extract` | `run <s> extract --auto [--max-items N]` | `{ url, mode, selector, fields, count, items, snapshot }` |
+| `extract` | `run <s> extract --selector <sel> [--fields f1,f2] [--max-items N] [--max-field-length N]` | `{ url, mode, selector, fields, count, items, snapshot }` |
+| `extract` | `run <s> extract --auto [--max-items N] [--max-field-length N]` | `{ url, mode, selector, fields, count, items, snapshot }` |
 
 **Table-aware extraction**: When `--auto` detects a table with `<th>` headers, items include per-column data (e.g., `{ Service: "Runtime", Description: "..." }`) instead of a single `text` field. Falls back to generic extraction when no headers are found.
 
@@ -174,6 +174,7 @@ This eliminates the common click-snapshot-check loop that wastes agent turns on 
 | `--allow-evaluate` | `evaluate` | Required safety flag for JS execution |
 | `--snapshot-depth <N>` | Any action with snapshot | Limit ARIA tree depth (e.g. 3 for top 3 levels) |
 | `--snapshot-selector <sel>` | Any action with snapshot | Scope snapshot to a DOM subtree |
+| `--max-field-length <N>` | `extract` | Max characters per field (default: 500, max: 2000) |
 | `--no-snapshot` | Any action with snapshot | Omit snapshot from output entirely |
 
 ## Error Handling

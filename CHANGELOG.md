@@ -18,6 +18,7 @@
 - `--verify-url` and `--verify-selector` flags for `session auth` to configure post-auth verification on a per-invocation basis
 - `verifyUrl` and `verifySelector` provider fields for built-in providers (github, gitlab, microsoft) to automatically verify API/dashboard access after login
 - `--min-wait <seconds>` flag for `session auth` to configure grace period before auth success polling starts (default: 5 seconds, clamped to 0-300)
+- `--max-field-length <N>` flag for `extract` macro to configure maximum characters per extracted field (default: 500, max: 2000)
 
 ### Fixed
 - Auth success detection no longer triggers false positives when the login page URL matches the successUrl pattern (e.g. Instagram, Reddit, Facebook whose login pages are sub-paths of the site root) (#40)

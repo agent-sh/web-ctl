@@ -686,9 +686,12 @@ async function extract(page, actionArgs, opts, helpers) {
   if (opts.maxItems != null && isNaN(parseInt(opts.maxItems, 10))) {
     throw new Error('Invalid --max-items value. Must be a number.');
   }
+  if (opts.maxFieldLength != null && isNaN(parseInt(opts.maxFieldLength, 10))) {
+    throw new Error('Invalid --max-field-length value. Must be a number.');
+  }
 
   const maxItems = Math.min(Math.max(parseInt(opts.maxItems, 10) || 100, 1), 500);
-  const FIELD_MAX_LEN = 500;
+  const fieldMaxLen = Math.min(Math.max(parseInt(opts.maxFieldLength, 10) || 500, 1), 2000);
   const VALID_FIELD_RE = /^[a-zA-Z0-9_-]+$/;
 
   if (hasSelector) {
@@ -769,7 +772,7 @@ async function extract(page, actionArgs, opts, helpers) {
         if (Object.keys(item).length > 0) results.push(item);
       }
       return results;
-    }, [fields, maxItems, FIELD_MAX_LEN]);
+    }, [fields, maxItems, fieldMaxLen]);
 
     const snapshot = await helpers.getSnapshot(page);
     return {
@@ -784,8 +787,8 @@ async function extract(page, actionArgs, opts, helpers) {
   }
 
   // Auto-detect mode - uses page.evaluate with a self-contained function
-  const result = await page.evaluate(function autoDetect(cap) {
-    var FIELD_MAX = 500;
+  const result = await page.evaluate(function autoDetect(cap, fieldMax) {
+    var FIELD_MAX = fieldMax;
 
     function truncate(s) {
       if (typeof s !== 'string') return s;
@@ -1040,7 +1043,7 @@ async function extract(page, actionArgs, opts, helpers) {
       selector: detectedSelector,
       count: items.length
     };
-  }, maxItems);
+  }, maxItems, fieldMaxLen);
 
   if (result.error) {
     throw new Error(result.error);

@@ -1671,3 +1671,154 @@ describe('extract auto-detect table mode', () => {
     assert.ok(result.fields.includes('Price'));
   });
 });
+
+// ---------------------------------------------------------------------------
+// --max-field-length tests
+// ---------------------------------------------------------------------------
+
+describe('extract --max-field-length validation', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+  const stubPage = {};
+
+  it('rejects non-numeric --max-field-length', async () => {
+    await assert.rejects(
+      () => macros['extract'](stubPage, [], { selector: '.item', maxFieldLength: 'abc' }, stubHelpers),
+      /Invalid --max-field-length/
+    );
+  });
+
+  it('rejects non-numeric --max-field-length in auto mode', async () => {
+    await assert.rejects(
+      () => macros['extract'](stubPage, [], { auto: true, maxFieldLength: 'xyz' }, stubHelpers),
+      /Invalid --max-field-length/
+    );
+  });
+});
+
+describe('extract --max-field-length selector mode', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+
+  it('defaults to 500 when --max-field-length not specified', async () => {
+    const page = {
+      url: () => 'https://example.com/list',
+      $$eval: async (selector, fn, args) => {
+        assert.equal(args[2], 500, 'fieldMaxLen should default to 500');
+        return [{ title: 'Item' }];
+      },
+    };
+
+    await macros['extract'](page, [], { selector: '.item' }, stubHelpers);
+  });
+
+  it('passes custom value through to $$eval', async () => {
+    const page = {
+      url: () => 'https://example.com/list',
+      $$eval: async (selector, fn, args) => {
+        assert.equal(args[2], 1000, 'fieldMaxLen should be 1000');
+        return [{ title: 'Item' }];
+      },
+    };
+
+    await macros['extract'](page, [], { selector: '.item', maxFieldLength: '1000' }, stubHelpers);
+  });
+
+  it('clamps to max 2000 when value exceeds limit', async () => {
+    const page = {
+      url: () => 'https://example.com/list',
+      $$eval: async (selector, fn, args) => {
+        assert.equal(args[2], 2000, 'fieldMaxLen should be clamped to 2000');
+        return [{ title: 'Item' }];
+      },
+    };
+
+    await macros['extract'](page, [], { selector: '.item', maxFieldLength: '5000' }, stubHelpers);
+  });
+
+  it('clamps to min 1 when value is negative', async () => {
+    const page = {
+      url: () => 'https://example.com/list',
+      $$eval: async (selector, fn, args) => {
+        assert.equal(args[2], 1, 'fieldMaxLen should be clamped to 1');
+        return [{ title: 'X' }];
+      },
+    };
+
+    await macros['extract'](page, [], { selector: '.item', maxFieldLength: '-5' }, stubHelpers);
+  });
+
+  it('defaults to 500 when value is zero (falsy)', async () => {
+    const page = {
+      url: () => 'https://example.com/list',
+      $$eval: async (selector, fn, args) => {
+        assert.equal(args[2], 500, 'fieldMaxLen should default to 500 for falsy 0');
+        return [{ title: 'X' }];
+      },
+    };
+
+    await macros['extract'](page, [], { selector: '.item', maxFieldLength: '0' }, stubHelpers);
+  });
+});
+
+describe('extract --max-field-length auto-detect mode', () => {
+  const stubHelpers = {
+    resolveSelector: () => {},
+    waitForStable: async () => {},
+    randomDelay: async () => {},
+    getSnapshot: async () => '(stub)',
+    sanitizeWebContent: s => s
+  };
+
+  it('defaults to 500 when --max-field-length not specified', async () => {
+    let receivedFieldMax;
+    const page = {
+      url: () => 'https://example.com/feed',
+      evaluate: async (fn, cap, fieldMax) => {
+        receivedFieldMax = fieldMax;
+        return { items: [{ title: 'Post' }], selector: 'div > article', count: 1 };
+      },
+    };
+
+    await macros['extract'](page, [], { auto: true }, stubHelpers);
+    assert.equal(receivedFieldMax, 500, 'fieldMaxLen should default to 500');
+  });
+
+  it('passes custom value as second arg to page.evaluate', async () => {
+    let receivedFieldMax;
+    const page = {
+      url: () => 'https://example.com/feed',
+      evaluate: async (fn, cap, fieldMax) => {
+        receivedFieldMax = fieldMax;
+        return { items: [{ title: 'Post' }], selector: 'div > article', count: 1 };
+      },
+    };
+
+    await macros['extract'](page, [], { auto: true, maxFieldLength: '1500' }, stubHelpers);
+    assert.equal(receivedFieldMax, 1500, 'fieldMaxLen should be 1500');
+  });
+
+  it('clamps to max 2000 in auto-detect mode', async () => {
+    let receivedFieldMax;
+    const page = {
+      url: () => 'https://example.com/feed',
+      evaluate: async (fn, cap, fieldMax) => {
+        receivedFieldMax = fieldMax;
+        return { items: [{ title: 'Post' }], selector: 'div > article', count: 1 };
+      },
+    };
+
+    await macros['extract'](page, [], { auto: true, maxFieldLength: '9999' }, stubHelpers);
+    assert.equal(receivedFieldMax, 2000, 'fieldMaxLen should be clamped to 2000');
+  });
+});
