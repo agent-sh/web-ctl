@@ -474,6 +474,9 @@ async function navigateToPage(page, paginationResult, helpers) {
         await element.click({ timeout: 10000 });
       }
     }
+  } else if (method === 'rel-next-link') {
+    // <link> elements are not interactive - cannot click; invalid href means no navigation
+    throw new Error('Pagination <link rel="next"> has no valid href. Cannot navigate.');
   } else {
     await element.click({ timeout: 10000 });
   }
@@ -501,7 +504,7 @@ async function detectPaginationLink(page, direction = 'next') {
     if (tagName === 'a') {
       if (await first.isVisible().catch(() => false)) {
         const href = await first.getAttribute('href').catch(() => null);
-        return { element: first, href, method: 'rel-next' };
+        return { element: first, href, method: 'rel-next-a' };
       }
     } else {
       // <link rel="next"> - extract href for goto

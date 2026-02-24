@@ -564,7 +564,7 @@ describe('next-page success paths', () => {
 
     assert.equal(result.previousUrl, 'https://example.com/page/1');
     assert.equal(result.url, 'https://example.com/page/2');
-    assert.equal(result.nextPageDetected, 'rel-next');
+    assert.equal(result.nextPageDetected, 'rel-next-a');
     assert.equal(result.snapshot, '(stub)');
   });
 
@@ -668,7 +668,7 @@ describe('next-page success paths', () => {
 
     const result = await macros['next-page'](page, [], {}, stubHelpers);
 
-    assert.equal(result.nextPageDetected, 'rel-next');
+    assert.equal(result.nextPageDetected, 'rel-next-a');
     assert.equal(result.url, '/list?p=2');
   });
 });
@@ -1074,7 +1074,7 @@ describe('URL validation in navigation', () => {
     const result = await macros['next-page'](page, [], {}, stubHelpers);
 
     assert.equal(clicked, true, 'should fall back to clicking the element');
-    assert.equal(result.nextPageDetected, 'rel-next');
+    assert.equal(result.nextPageDetected, 'rel-next-a');
   });
 
   it('next-page falls back to click for data: href', async () => {
@@ -1102,7 +1102,7 @@ describe('URL validation in navigation', () => {
     const result = await macros['next-page'](page, [], {}, stubHelpers);
 
     assert.equal(clicked, true, 'should fall back to clicking the element');
-    assert.equal(result.nextPageDetected, 'rel-next');
+    assert.equal(result.nextPageDetected, 'rel-next-a');
   });
 
   it('paginate falls back to click for javascript: href in pagination loop', async () => {
