@@ -187,7 +187,6 @@ function collapseRepeated(snapshot) {
   if (typeof snapshot === 'string' && snapshot.startsWith('(')) return snapshot;
 
   const lines = snapshot.split('\n');
-  const result = [];
 
   // Parse each line into { depth, type, raw }
   const parsed = lines.map(line => {
@@ -201,23 +200,27 @@ function collapseRepeated(snapshot) {
     return { depth, type, raw: line };
   });
 
-  let i = 0;
-  while (i < parsed.length) {
-    const current = parsed[i];
+  // Process a range of parsed entries, collapsing sibling groups recursively
+  function processRange(start, end) {
+    const out = [];
+    let i = start;
+    while (i < end) {
+      const current = parsed[i];
+      if (!current.type) {
+        out.push(current.raw);
+        i++;
+        continue;
+      }
 
-    // Find a sibling group: consecutive entries at the same depth with the same type
-    if (current.type) {
-      // Collect all siblings of this type at this depth
+      // Collect all consecutive siblings of the same type at this depth
       const siblings = [];
       let j = i;
-      while (j < parsed.length) {
+      while (j < end) {
         const entry = parsed[j];
         if (j === i || (entry.depth === current.depth && entry.type === current.type)) {
-          // This is a sibling - collect it and its children
           const siblingStart = j;
           j++;
-          // Gather children (deeper lines)
-          while (j < parsed.length && parsed[j].depth > current.depth) {
+          while (j < end && parsed[j].depth > current.depth) {
             j++;
           }
           siblings.push({ start: siblingStart, end: j });
@@ -227,33 +230,30 @@ function collapseRepeated(snapshot) {
       }
 
       if (siblings.length > 2) {
-        // Keep first 2 siblings with subtrees
+        // Keep first 2 siblings, recursively process their children
         for (let s = 0; s < 2; s++) {
-          for (let k = siblings[s].start; k < siblings[s].end; k++) {
-            result.push(parsed[k].raw);
-          }
+          out.push(parsed[siblings[s].start].raw);
+          // Recursively process children of this sibling
+          const childLines = processRange(siblings[s].start + 1, siblings[s].end);
+          out.push(...childLines);
         }
-        // Insert collapse marker
         const collapsed = siblings.length - 2;
         const indent = ' '.repeat(current.depth * 2);
-        result.push(`${indent}- ... (${collapsed} more ${current.type})`);
-        i = j;
+        out.push(`${indent}- ... (${collapsed} more ${current.type})`);
       } else {
-        // 2 or fewer siblings - output all lines as-is
+        // 2 or fewer siblings - output parent, recursively process children
         for (let s = 0; s < siblings.length; s++) {
-          for (let k = siblings[s].start; k < siblings[s].end; k++) {
-            result.push(parsed[k].raw);
-          }
+          out.push(parsed[siblings[s].start].raw);
+          const childLines = processRange(siblings[s].start + 1, siblings[s].end);
+          out.push(...childLines);
         }
-        i = j;
       }
-    } else {
-      result.push(current.raw);
-      i++;
+      i = j;
     }
+    return out;
   }
 
-  return result.join('\n');
+  return processRange(0, parsed.length).join('\n');
 }
 
 /**
