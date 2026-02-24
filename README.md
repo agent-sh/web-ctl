@@ -128,7 +128,7 @@ web-ctl session end github
 | `extract` | `run <s> extract --selector <sel> [--fields f1,f2] [--max-items N] [--max-field-length N]` | `{ url, mode, selector, fields, count, items, snapshot }` |
 | `extract` | `run <s> extract --auto [--max-items N] [--max-field-length N]` | `{ url, mode, selector, fields, count, items, snapshot }` |
 
-**Table-aware extraction**: When `--auto` detects a table with `<th>` headers, items include per-column data (e.g., `{ Service: "Runtime", Description: "..." }`) instead of a single `text` field. Falls back to generic extraction when no headers are found.
+**Table-aware extraction**: When `--auto` detects a table with `<th>` headers, items include per-column data (e.g., `{ Service: "Runtime", Description: "..." }`). Tables without headers use column-indexed keys (`column_1`, `column_2`, etc.). In selector mode, use `--fields column_1,column_2` to extract specific columns by index.
 
 ### click vs click-wait
 
