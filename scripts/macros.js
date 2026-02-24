@@ -831,7 +831,6 @@ async function extract(page, actionArgs, opts, helpers) {
     }
 
     function getTableHeaders(group) {
-      // Find the <table> ancestor
       var tableEl = group.parent;
       while (tableEl && tableEl.tagName !== 'TABLE') {
         tableEl = tableEl.parentElement;
@@ -841,7 +840,6 @@ async function extract(page, actionArgs, opts, helpers) {
       var headers = [];
       var headerRow = null;
 
-      // Try <thead> first
       var thead = tableEl.querySelector('thead');
       if (thead) {
         var firstTR = thead.querySelector('tr');
