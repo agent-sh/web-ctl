@@ -1352,6 +1352,31 @@ describe('extract selector mode', () => {
     sanitizeWebContent: s => s
   };
 
+  it('rejects field names with special characters', async () => {
+    const page = { url: () => 'https://example.com', $$eval: async () => [] };
+    await assert.rejects(
+      () => macros['extract'](page, [], { selector: '.item', fields: 'title,"];alert(1);//' }, stubHelpers),
+      /Invalid field name/
+    );
+  });
+
+  it('clamps --max-items to minimum of 1', async () => {
+    const page = {
+      url: () => 'https://example.com/list',
+      $$eval: async (selector, fn, args) => {
+        const maxItems = args[1];
+        assert.equal(maxItems, 1);
+        return [{ title: 'Only one' }];
+      },
+    };
+
+    const result = await macros['extract'](page, [], {
+      selector: '.item',
+      maxItems: '-5',
+    }, stubHelpers);
+    assert.equal(result.count, 1);
+  });
+
   it('extracts items from matched elements', async () => {
     const page = {
       url: () => 'https://example.com/blog',

@@ -689,12 +689,19 @@ async function extract(page, actionArgs, opts, helpers) {
 
   const maxItems = Math.min(Math.max(parseInt(opts.maxItems, 10) || 100, 1), 500);
   const FIELD_MAX_LEN = 500;
+  const VALID_FIELD_RE = /^[a-zA-Z0-9_-]+$/;
 
   if (hasSelector) {
     // Selector mode
     const fields = opts.fields
       ? opts.fields.split(',').map(f => f.trim()).filter(Boolean)
       : ['title', 'url', 'text'];
+
+    for (const f of fields) {
+      if (!VALID_FIELD_RE.test(f)) {
+        throw new Error(`Invalid field name "${f}". Only letters, numbers, hyphens, underscores allowed.`);
+      }
+    }
 
     const items = await page.$$eval(opts.selector, function extractFields(els, args) {
       var fieldNames = args[0];
@@ -816,19 +823,22 @@ async function extract(page, actionArgs, opts, helpers) {
     }
 
     // Walk all elements, group siblings by parent + tagName
+    // Use a separate Map to track parent IDs (avoids mutating DOM nodes)
     var groups = {};
-    var allElements = document.querySelectorAll('*');
+    var parentIdMap = new Map();
+    var nextId = 0;
+    var allElements = document.body.querySelectorAll('*');
     for (var i = 0; i < allElements.length; i++) {
       var el = allElements[i];
       var parent = el.parentElement;
       if (!parent) continue;
       var tag = el.tagName;
-      if (!parent._extractGroupId) {
-        parent._extractGroupId = 'g' + i;
+      if (!parentIdMap.has(parent)) {
+        parentIdMap.set(parent, 'g' + (nextId++));
       }
-      var key = parent._extractGroupId + ':' + tag;
+      var key = parentIdMap.get(parent) + ':' + tag;
       if (!groups[key]) {
-        groups[key] = { parent: parent, tag: tag, elements: [] };
+        groups[key] = { parent: parent, tag: tag, elements: [], signature: null };
       }
       groups[key].elements.push(el);
     }
@@ -842,6 +852,7 @@ async function extract(page, actionArgs, opts, helpers) {
       var group = groups[keys[k]];
       if (group.elements.length < 3) continue;
 
+      // Cache signature on first element, then compare
       var sig = getSignature(group.elements[0]);
       var allSame = true;
       for (var s = 1; s < group.elements.length; s++) {
@@ -862,31 +873,27 @@ async function extract(page, actionArgs, opts, helpers) {
       }
     }
 
-    // Cleanup temporary property
-    for (var c = 0; c < allElements.length; c++) {
-      if (allElements[c]._extractGroupId) {
-        delete allElements[c]._extractGroupId;
-      }
-    }
-
     if (!bestGroup) {
       return { error: 'No repeated pattern detected on this page.' };
     }
 
     // Build a CSS selector for the detected group
+    function escapeCSS(s) {
+      return typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(s) : s.replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+    }
     function buildSelector(parent, tag) {
       var parts = [];
       var node = parent;
       while (node && node !== document.body && node !== document.documentElement) {
         var nTag = node.tagName.toLowerCase();
         if (node.id) {
-          parts.unshift('#' + node.id);
+          parts.unshift('#' + escapeCSS(node.id));
           break;
         }
         var cls = '';
         if (node.className && typeof node.className === 'string') {
           var classes = node.className.trim().split(/\s+/).slice(0, 2);
-          cls = classes.map(function(c) { return '.' + c; }).join('');
+          cls = classes.map(function(c) { return '.' + escapeCSS(c); }).join('');
         }
         parts.unshift(nTag + cls);
         node = node.parentElement;
