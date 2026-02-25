@@ -195,4 +195,64 @@ async function waitForStable(page, { timeout = 5000 } = {}) {
   }), DOM_QUIET_MS);
 }
 
-module.exports = { launchBrowser, closeBrowser, randomDelay, isWSL, canLaunchHeaded, waitForStable };
+/**
+ * Wait for async-rendered content to finish loading.
+ * Combines network idle, DOM stability, and loading indicator absence detection.
+ *
+ * @param {import('playwright').Page} page
+ * @param {object} options - { timeout: number (ms, default 15000) }
+ */
+async function waitForLoaded(page, { timeout = 15000 } = {}) {
+  // Phase 1: Network idle + DOM stability (reuse existing)
+  await waitForStable(page, { timeout });
+
+  // Phase 2: Wait for loading indicators to disappear
+  const deadline = Date.now() + timeout;
+  const POLL_MS = 200;
+  await page.evaluate(({ pollMs, deadlineTs }) => new Promise(resolve => {
+    const SELECTORS = [
+      '[role="progressbar"]', '[aria-busy="true"]',
+      '.loading', '.spinner', '.skeleton',
+      '[class*="loading"]', '[class*="spinner"]', '[class*="skeleton"]'
+    ];
+    const TEXT_RE = /^\s*(loading|please wait|crunching)\.*\s*$/i;
+
+    function hasLoadingIndicators() {
+      for (const sel of SELECTORS) {
+        const el = document.querySelector(sel);
+        if (el && el.offsetParent !== null) return true;
+      }
+      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        if (TEXT_RE.test(walker.currentNode.textContent)) return true;
+      }
+      return false;
+    }
+
+    function poll() {
+      if (!hasLoadingIndicators() || Date.now() >= deadlineTs) {
+        resolve();
+      } else {
+        setTimeout(poll, pollMs);
+      }
+    }
+    poll();
+  }), { pollMs: POLL_MS, deadlineTs: deadline });
+
+  // Phase 3: Short DOM quiet wait to catch final renders
+  const remaining = Math.max(deadline - Date.now(), 0);
+  if (remaining > 300) {
+    const DOM_QUIET_MS = 300;
+    await page.evaluate((ms) => new Promise(resolve => {
+      let timer = setTimeout(resolve, ms);
+      const observer = new MutationObserver(() => {
+        clearTimeout(timer);
+        timer = setTimeout(resolve, ms);
+      });
+      observer.observe(document.body, { childList: true, subtree: true, attributes: true });
+      setTimeout(() => { observer.disconnect(); resolve(); }, ms * 5);
+    }), DOM_QUIET_MS);
+  }
+}
+
+module.exports = { launchBrowser, closeBrowser, randomDelay, isWSL, canLaunchHeaded, waitForStable, waitForLoaded };

@@ -997,3 +997,202 @@ describe('--ensure-auth CLI integration', () => {
       '--ensure-auth should not cause an invalid flag error');
   });
 });
+
+describe('waitForLoaded export', () => {
+  it('is exported from browser-launcher', () => {
+    const launcher = require('../scripts/browser-launcher');
+    assert.equal(typeof launcher.waitForLoaded, 'function');
+  });
+});
+
+describe('--wait-loaded flag in web-ctl source', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const webCtlSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+    'utf8'
+  );
+
+  it('BOOLEAN_FLAGS includes --wait-loaded', () => {
+    assert.ok(
+      webCtlSource.includes("'--wait-loaded'"),
+      '--wait-loaded should be in BOOLEAN_FLAGS'
+    );
+  });
+
+  it('help text contains --wait-loaded flag', () => {
+    assert.ok(
+      webCtlSource.includes('--wait-loaded'),
+      'help text should document --wait-loaded'
+    );
+  });
+
+  it('goto case references opts.waitLoaded', () => {
+    assert.ok(
+      webCtlSource.includes('opts.waitLoaded'),
+      'goto case should check waitLoaded flag'
+    );
+  });
+
+  it('waitForLoaded is imported from browser-launcher', () => {
+    assert.ok(
+      webCtlSource.includes('waitForLoaded'),
+      'web-ctl.js should import waitForLoaded'
+    );
+  });
+
+  it('result includes waitLoaded conditional spread', () => {
+    assert.ok(
+      webCtlSource.includes("...(opts.waitLoaded && { waitLoaded: true })"),
+      'result should conditionally include waitLoaded'
+    );
+  });
+
+  it('waitForLoaded is exposed in macro helpers', () => {
+    assert.ok(
+      webCtlSource.includes('waitForLoaded,'),
+      'macro helpers object should include waitForLoaded'
+    );
+  });
+});
+
+describe('--wait-loaded flag parsing', () => {
+  const BOOLEAN_FLAGS = new Set([
+    '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
+    '--exact', '--accept', '--submit', '--dismiss', '--auto',
+    '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
+    '--snapshot-full', '--no-auth-wall-detect', '--ensure-auth', '--wait-loaded',
+  ]);
+
+  function parseOptions(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i].startsWith('--')) {
+        const key = args[i].slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        const next = args[i + 1];
+        if (next && !next.startsWith('--') && !BOOLEAN_FLAGS.has(args[i])) {
+          opts[key] = next;
+          i++;
+        } else {
+          opts[key] = true;
+        }
+      }
+    }
+    return opts;
+  }
+
+  it('--wait-loaded parses as boolean true', () => {
+    const opts = parseOptions(['--wait-loaded']);
+    assert.equal(opts.waitLoaded, true);
+  });
+
+  it('--wait-loaded does not consume next positional arg', () => {
+    const opts = parseOptions(['--wait-loaded', 'https://example.com']);
+    assert.equal(opts.waitLoaded, true);
+    assert.equal(opts['https://example.com'], undefined);
+  });
+
+  it('--wait-loaded works alongside --timeout', () => {
+    const opts = parseOptions(['--wait-loaded', '--timeout', '20000']);
+    assert.equal(opts.waitLoaded, true);
+    assert.equal(opts.timeout, '20000');
+  });
+
+  it('--wait-loaded works alongside --ensure-auth', () => {
+    const opts = parseOptions(['--wait-loaded', '--ensure-auth']);
+    assert.equal(opts.waitLoaded, true);
+    assert.equal(opts.ensureAuth, true);
+  });
+});
+
+describe('waitForLoaded implementation details', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const launcherSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'browser-launcher.js'),
+    'utf8'
+  );
+
+  it('waitForLoaded calls waitForStable', () => {
+    const fnStart = launcherSource.indexOf('async function waitForLoaded');
+    const fnBody = launcherSource.slice(fnStart, fnStart + 2000);
+    assert.ok(
+      fnBody.includes('await waitForStable(page, { timeout })'),
+      'waitForLoaded should delegate to waitForStable'
+    );
+  });
+
+  it('checks for loading indicator selectors', () => {
+    assert.ok(launcherSource.includes('[role="progressbar"]'), 'should check progressbar role');
+    assert.ok(launcherSource.includes('.spinner'), 'should check .spinner class');
+    assert.ok(launcherSource.includes('.skeleton'), 'should check .skeleton class');
+    assert.ok(launcherSource.includes('.loading'), 'should check .loading class');
+  });
+
+  it('has 15000ms default timeout', () => {
+    assert.ok(
+      launcherSource.includes('timeout = 15000'),
+      'default timeout should be 15000ms'
+    );
+  });
+
+  it('checks aria-busy attribute', () => {
+    assert.ok(
+      launcherSource.includes('[aria-busy="true"]'),
+      'should check aria-busy attribute'
+    );
+  });
+});
+
+describe('--wait-loaded CLI integration', () => {
+  const { beforeEach, afterEach } = require('node:test');
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  const { execFileSync } = require('child_process');
+
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-ctl-wait-loaded-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function runCliSafe(...args) {
+    try {
+      const result = execFileSync(process.execPath, [
+        path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+        ...args
+      ], {
+        env: { ...process.env, AI_STATE_DIR: tmpDir },
+        encoding: 'utf8',
+        timeout: 30000
+      });
+      return JSON.parse(result);
+    } catch (err) {
+      if (err.stdout) {
+        try { return JSON.parse(err.stdout); } catch { /* fall through */ }
+      }
+      throw err;
+    }
+  }
+
+  it('goto with --wait-loaded against example.com runs without error', () => {
+    const result = runCliSafe('run', 'loadtest', 'goto', 'https://example.com', '--wait-loaded');
+    assert.ok(result, 'should return a result');
+    assert.notEqual(result.error, 'invalid_flag',
+      '--wait-loaded should not cause an invalid flag error');
+  });
+
+  it('result includes waitLoaded: true', () => {
+    const result = runCliSafe('run', 'loadtest2', 'goto', 'https://example.com', '--wait-loaded');
+    assert.ok(result, 'should return a result');
+    if (result.ok && result.result) {
+      assert.equal(result.result.waitLoaded, true,
+        'result should include waitLoaded: true');
+    }
+  });
+});

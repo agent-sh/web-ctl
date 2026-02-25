@@ -2,7 +2,7 @@
 'use strict';
 
 const sessionStore = require('./session-store');
-const { launchBrowser, closeBrowser, randomDelay, waitForStable, canLaunchHeaded } = require('./browser-launcher');
+const { launchBrowser, closeBrowser, randomDelay, waitForStable, waitForLoaded, canLaunchHeaded } = require('./browser-launcher');
 const { detectAuthWall } = require('./auth-wall-detect');
 const { runAuthFlow } = require('./auth-flow');
 const { checkAuthSuccess } = require('./auth-check');
@@ -21,7 +21,7 @@ const BOOLEAN_FLAGS = new Set([
   '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
   '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
-  '--snapshot-full', '--no-auth-wall-detect', '--ensure-auth',
+  '--snapshot-full', '--no-auth-wall-detect', '--ensure-auth', '--wait-loaded',
 ]);
 
 function validateSessionName(name) {
@@ -986,8 +986,13 @@ async function runAction(sessionName, action, actionArgs, opts) {
                     context = headlessBrowser.context;
                     page = headlessBrowser.page;
                     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    if (opts.waitLoaded) {
+                      const loadedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 15000;
+                      await waitForLoaded(page, { timeout: loadedTimeout });
+                    }
                     const snapshot = await getSnapshot(page, opts);
                     result = { url: page.url(), authWallDetected: true, ensureAuthCompleted: true,
+                               ...(opts.waitLoaded && { waitLoaded: true }),
                                ...(snapshot != null && { snapshot }) };
                   } catch (relaunchErr) {
                     result = { url, authWallDetected: true, ensureAuthCompleted: true,
@@ -1007,8 +1012,13 @@ async function runAction(sessionName, action, actionArgs, opts) {
               } else {
                 console.warn('[WARN] Checkpoint open for ' + (ckTimeout / 1000) + 's');
                 await new Promise(resolve => setTimeout(resolve, ckTimeout));
+                if (opts.waitLoaded) {
+                  const loadedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 15000;
+                  await waitForLoaded(page, { timeout: loadedTimeout });
+                }
                 const snapshot = await getSnapshot(page, opts);
                 result = { url: page.url(), authWallDetected: true, checkpointCompleted: true,
+                           ...(opts.waitLoaded && { waitLoaded: true }),
                            ...(snapshot != null && { snapshot }) };
                 break;
               }
@@ -1018,16 +1028,25 @@ async function runAction(sessionName, action, actionArgs, opts) {
                            message: 'Auth wall detected but no display available for headed browser.' };
                 break;
               }
+              if (opts.waitLoaded) {
+                const loadedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 15000;
+                await waitForLoaded(page, { timeout: loadedTimeout });
+              }
               const snapshot = await getSnapshot(page, opts);
               result = { url: page.url(), authWallDetected: true, checkpointCompleted: false,
                          message: 'Auth wall detected but no display for headed checkpoint.',
+                         ...(opts.waitLoaded && { waitLoaded: true }),
                          ...(snapshot != null && { snapshot }) };
               break;
             }
           }
         }
+        if (opts.waitLoaded) {
+          const loadedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 15000;
+          await waitForLoaded(page, { timeout: loadedTimeout });
+        }
         const snapshot = await getSnapshot(page, opts);
-        result = { url: page.url(), status: response ? response.status() : null, ...(snapshot != null && { snapshot }) };
+        result = { url: page.url(), status: response ? response.status() : null, ...(opts.waitLoaded && { waitLoaded: true }), ...(snapshot != null && { snapshot }) };
         break;
       }
 
@@ -1167,7 +1186,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
       default: {
         const macro = macros[action];
         if (macro) {
-          const helpers = { resolveSelector, waitForStable, randomDelay, getSnapshot: (page) => getSnapshot(page, opts), sanitizeWebContent };
+          const helpers = { resolveSelector, waitForStable, waitForLoaded, randomDelay, getSnapshot: (page) => getSnapshot(page, opts), sanitizeWebContent };
           result = await macro(page, actionArgs, opts, helpers);
           // Clean up null snapshot from macros when --no-snapshot is active
           if (result && result.snapshot == null) delete result.snapshot;
@@ -1251,6 +1270,8 @@ Session commands:
 Run actions:
   goto <url>                    Navigate to URL
     [--ensure-auth]             Poll for auth completion instead of timed checkpoint
+    [--wait-loaded]             Wait for async content to finish rendering
+    [--timeout <ms>]            Wait timeout (default: 15000)
   snapshot                      Get accessibility tree
   click <selector>              Click element
     [--wait-stable]             Wait for DOM + network to settle after click
