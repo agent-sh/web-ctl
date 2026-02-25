@@ -147,10 +147,10 @@ async function canLaunchHeaded() {
     return false;
   }
 
-  const { chromium } = require('playwright');
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      const { chromium } = require('playwright');
       const ctx = await chromium.launchPersistentContext('', {
         headless: false,
         args: ['--no-first-run', '--no-default-browser-check'],
