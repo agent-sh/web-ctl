@@ -950,7 +950,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
         const url = actionArgs[0];
         if (!url) throw new Error('URL required: run <session> goto <url>');
         validateUrl(url);
-        const loadedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 15000;
+        const loadedTimeout = opts.timeout ? Math.max(parseInt(opts.timeout, 10) || 15000, 0) : 15000;
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         if (opts.ensureAuth || !opts.noAuthWallDetect) {
           const detection = await detectAuthWall(page, context, url);
