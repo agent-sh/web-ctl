@@ -216,12 +216,14 @@ async function waitForLoaded(page, { timeout = 15000 } = {}) {
     const TEXT_RE = /^\s*(loading|please wait|crunching)\.*\s*$/i;
 
     function hasLoadingIndicators() {
-      for (const sel of SELECTORS) {
-        const el = document.querySelector(sel);
-        if (el && el.offsetParent !== null) return true;
+      if (!document.body) return false;
+      const match = document.body.querySelectorAll(SELECTORS.join(','));
+      for (const el of match) {
+        if (el.offsetParent !== null) return true;
       }
       const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      while (walker.nextNode()) {
+      let nodeCount = 0;
+      while (walker.nextNode() && nodeCount++ < 5000) {
         if (TEXT_RE.test(walker.currentNode.textContent)) return true;
       }
       return false;
@@ -241,13 +243,15 @@ async function waitForLoaded(page, { timeout = 15000 } = {}) {
   if (remaining > 300) {
     const DOM_QUIET_MS = 300;
     await page.evaluate((ms) => new Promise(resolve => {
-      let timer = setTimeout(resolve, ms);
+      if (!document.body) { resolve(); return; }
+      const done = () => { observer.disconnect(); resolve(); };
+      let timer = setTimeout(done, ms);
       const observer = new MutationObserver(() => {
         clearTimeout(timer);
-        timer = setTimeout(resolve, ms);
+        timer = setTimeout(done, ms);
       });
       observer.observe(document.body, { childList: true, subtree: true, attributes: true });
-      setTimeout(() => { observer.disconnect(); resolve(); }, ms * 5);
+      setTimeout(done, ms * 5);
     }), DOM_QUIET_MS);
   }
 }

@@ -1054,6 +1054,14 @@ describe('--wait-loaded flag in web-ctl source', () => {
       'macro helpers object should include waitForLoaded'
     );
   });
+
+  it('goto case declares loadedTimeout once at top', () => {
+    const gotoStart = webCtlSource.indexOf("case 'goto':");
+    const gotoEnd = webCtlSource.indexOf("case 'snapshot':", gotoStart);
+    const gotoBody = webCtlSource.slice(gotoStart, gotoEnd);
+    const matches = gotoBody.match(/const loadedTimeout/g) || [];
+    assert.equal(matches.length, 1, 'loadedTimeout should be declared once at top of goto case');
+  });
 });
 
 describe('--wait-loaded flag parsing', () => {
@@ -1140,6 +1148,33 @@ describe('waitForLoaded implementation details', () => {
     assert.ok(
       launcherSource.includes('[aria-busy="true"]'),
       'should check aria-busy attribute'
+    );
+  });
+
+  it('guards against null document.body', () => {
+    const fnStart = launcherSource.indexOf('async function waitForLoaded');
+    const fnBody = launcherSource.slice(fnStart, fnStart + 2000);
+    assert.ok(
+      fnBody.includes('!document.body'),
+      'should check for null document.body'
+    );
+  });
+
+  it('limits TreeWalker traversal depth', () => {
+    const fnStart = launcherSource.indexOf('async function waitForLoaded');
+    const fnBody = launcherSource.slice(fnStart, fnStart + 2000);
+    assert.ok(
+      fnBody.includes('nodeCount') && fnBody.includes('5000'),
+      'should limit tree walker to prevent DoS on large DOMs'
+    );
+  });
+
+  it('uses querySelectorAll for combined selector check', () => {
+    const fnStart = launcherSource.indexOf('async function waitForLoaded');
+    const fnBody = launcherSource.slice(fnStart, fnStart + 2000);
+    assert.ok(
+      fnBody.includes('querySelectorAll'),
+      'should use querySelectorAll for efficient combined selector matching'
     );
   });
 });

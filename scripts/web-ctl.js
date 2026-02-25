@@ -950,6 +950,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
         const url = actionArgs[0];
         if (!url) throw new Error('URL required: run <session> goto <url>');
         validateUrl(url);
+        const loadedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 15000;
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
         if (opts.ensureAuth || !opts.noAuthWallDetect) {
           const detection = await detectAuthWall(page, context, url);
@@ -987,7 +988,6 @@ async function runAction(sessionName, action, actionArgs, opts) {
                     page = headlessBrowser.page;
                     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
                     if (opts.waitLoaded) {
-                      const loadedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 15000;
                       await waitForLoaded(page, { timeout: loadedTimeout });
                     }
                     const snapshot = await getSnapshot(page, opts);
@@ -1013,7 +1013,6 @@ async function runAction(sessionName, action, actionArgs, opts) {
                 console.warn('[WARN] Checkpoint open for ' + (ckTimeout / 1000) + 's');
                 await new Promise(resolve => setTimeout(resolve, ckTimeout));
                 if (opts.waitLoaded) {
-                  const loadedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 15000;
                   await waitForLoaded(page, { timeout: loadedTimeout });
                 }
                 const snapshot = await getSnapshot(page, opts);
@@ -1029,7 +1028,6 @@ async function runAction(sessionName, action, actionArgs, opts) {
                 break;
               }
               if (opts.waitLoaded) {
-                const loadedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 15000;
                 await waitForLoaded(page, { timeout: loadedTimeout });
               }
               const snapshot = await getSnapshot(page, opts);
@@ -1042,7 +1040,6 @@ async function runAction(sessionName, action, actionArgs, opts) {
           }
         }
         if (opts.waitLoaded) {
-          const loadedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : 15000;
           await waitForLoaded(page, { timeout: loadedTimeout });
         }
         const snapshot = await getSnapshot(page, opts);
