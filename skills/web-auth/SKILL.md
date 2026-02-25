@@ -117,7 +117,7 @@ If verification fails (`ok: false`), the auth flow still succeeds - the verifica
 On timeout: Ask the user if they want to retry with a longer timeout.
 
 On error: Check the error message. Common issues:
-- Browser not found: User needs to install Chrome or Playwright (`npx playwright install chromium`)
+- Browser not found: Dependencies should auto-install on first run. If disabled (`WEB_CTL_SKIP_AUTO_INSTALL=1`), install manually: `npm install && npx playwright install chromium`
 - Session locked: Another process is using this session
 
 ### 5. Verify Auth

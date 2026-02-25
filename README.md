@@ -35,9 +35,9 @@ Each invocation is a single Node.js process. No daemon, no MCP server, no IPC. S
 # Claude Code
 agentsys install web-ctl
 
-# Peer dependency
-npm install playwright
-npx playwright install chromium
+# Dependencies auto-install on first use
+# To disable auto-install (CI/sandboxed environments):
+# export WEB_CTL_SKIP_AUTO_INSTALL=1
 ```
 
 ## Commands
@@ -275,8 +275,8 @@ Can be invoked by:
 ## Requirements
 
 - Node.js 18+
-- Playwright (`npm install playwright`)
-- Chromium (`npx playwright install chromium`)
+- Playwright and Chromium (auto-installed on first browser operation)
+- Set `WEB_CTL_SKIP_AUTO_INSTALL=1` to disable auto-install in CI/sandboxed environments
 
 ## License
 
