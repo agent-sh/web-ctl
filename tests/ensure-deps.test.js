@@ -162,6 +162,106 @@ describe('lockfile management', () => {
   });
 });
 
+describe('ensurePlaywright - install failure handling', () => {
+  it('reports npm install failure with manual instructions', () => {
+    // Mock both require.resolve (missing playwright) and execSync (npm fails)
+    const code = `
+      const cp = require('child_process');
+      const origExec = cp.execSync;
+      cp.execSync = function(cmd, opts) {
+        if (cmd.includes('npm install')) {
+          throw new Error('npm ERR! code ENETUNREACH');
+        }
+        return origExec.call(this, cmd, opts);
+      };
+      const { ensurePlaywright } = require('./scripts/ensure-deps');
+      try {
+        ensurePlaywright();
+        process.stdout.write('NO_THROW');
+      } catch (err) {
+        process.stdout.write(err.message);
+      }
+    `;
+    const output = runWithMissingPlaywright(code);
+    assert.notEqual(output, 'NO_THROW', 'Should throw on npm failure');
+    assert.ok(output.includes('installation failed'), 'Should mention failure');
+    assert.ok(output.includes('Run manually'), 'Should include manual instructions');
+  });
+
+  it('reports chromium install failure with manual instructions', () => {
+    // npm install succeeds but playwright install chromium fails
+    const code = `
+      const cp = require('child_process');
+      const origExec = cp.execSync;
+      cp.execSync = function(cmd, opts) {
+        if (cmd.includes('playwright install')) {
+          throw new Error('Failed to download chromium');
+        }
+        return origExec.call(this, cmd, opts);
+      };
+      const { ensurePlaywright } = require('./scripts/ensure-deps');
+      try {
+        ensurePlaywright();
+        process.stdout.write('NO_THROW');
+      } catch (err) {
+        process.stdout.write(err.message);
+      }
+    `;
+    const output = runWithMissingPlaywright(code);
+    assert.notEqual(output, 'NO_THROW', 'Should throw on chromium install failure');
+    assert.ok(output.includes('installation failed'), 'Should mention failure');
+    assert.ok(output.includes('npx playwright install chromium'), 'Should include chromium install command');
+  });
+
+  it('cleans up lockfile after install failure', () => {
+    const code = `
+      const cp = require('child_process');
+      const origExec = cp.execSync;
+      cp.execSync = function(cmd, opts) {
+        if (cmd.includes('npm install')) throw new Error('npm ERR!');
+        return origExec.call(this, cmd, opts);
+      };
+      const { ensurePlaywright } = require('./scripts/ensure-deps');
+      try { ensurePlaywright(); } catch {}
+      const fs = require('fs');
+      const path = require('path');
+      const lockfile = path.join(__dirname, '.deps-installing');
+      process.stdout.write(String(fs.existsSync(lockfile)));
+    `;
+    const output = runWithMissingPlaywright(code);
+    assert.equal(output, 'false', 'Lockfile should be cleaned up after failure');
+  });
+});
+
+describe('stale lock detection', () => {
+  it('cleans up lockfile with non-existent PID', () => {
+    // Use a subprocess to test stale lock detection
+    const code = `
+      const fs = require('fs');
+      const path = require('path');
+      const lockfile = path.join(__dirname, '.deps-installing');
+      // Create lockfile with PID that does not exist
+      fs.writeFileSync(lockfile, '2147483647', { flag: 'wx' });
+      // Now when ensurePlaywright tries to install, acquireLock should
+      // detect stale lock, remove it, and acquire it
+      // Since we also mock execSync to fail, we'll see the install attempt
+      const cp = require('child_process');
+      const origExec = cp.execSync;
+      cp.execSync = function(cmd, opts) {
+        if (cmd.includes('npm install')) throw new Error('expected');
+        return origExec.call(this, cmd, opts);
+      };
+      const { ensurePlaywright } = require('./scripts/ensure-deps');
+      try { ensurePlaywright(); } catch (err) {
+        // It should have gotten past the stale lock and attempted install
+        process.stdout.write(err.message.includes('installation failed') ? 'STALE_CLEANED' : 'OTHER');
+      }
+    `;
+    const output = runWithMissingPlaywright(code);
+    assert.equal(output, 'STALE_CLEANED', 'Should clean stale lock and attempt install');
+  });
+});
+
 describe('ensure-deps exports', () => {
   it('exports ensurePlaywright function', () => {
     const mod = getModule();

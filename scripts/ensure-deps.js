@@ -24,10 +24,17 @@ function isProcessAlive(pid) {
 }
 
 /**
+ * Synchronous sleep that yields CPU (no busy-wait spin).
+ */
+function syncSleep(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
  * Acquire an exclusive lockfile for dependency installation.
  * Waits up to LOCK_TIMEOUT_MS if another process holds the lock.
- * Returns true if lock was acquired, false if another process finished first
- * (meaning deps should now be available).
+ * Returns true if lock was acquired, false if lock disappeared
+ * (another process finished installing).
  */
 function acquireLock() {
   const start = Date.now();
@@ -42,12 +49,12 @@ function acquireLock() {
       try {
         holderPid = parseInt(fs.readFileSync(LOCKFILE, 'utf8').trim(), 10);
       } catch {
-        // Lock file disappeared between check and read - retry
-        continue;
+        // Lock file disappeared between check and read
+        return false;
       }
 
-      if (holderPid && !isProcessAlive(holderPid)) {
-        // Stale lock - remove and retry
+      if (!holderPid || isNaN(holderPid) || holderPid <= 0 || !isProcessAlive(holderPid)) {
+        // Stale or invalid lock - remove and retry
         try { fs.unlinkSync(LOCKFILE); } catch { /* race with another cleaner */ }
         continue;
       }
@@ -60,9 +67,7 @@ function acquireLock() {
         );
       }
 
-      // Busy-wait (sync context, cannot use setTimeout)
-      const waitUntil = Date.now() + LOCK_POLL_MS;
-      while (Date.now() < waitUntil) { /* spin */ }
+      syncSleep(LOCK_POLL_MS);
     }
   }
 }
