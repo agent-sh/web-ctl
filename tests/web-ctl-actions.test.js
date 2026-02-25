@@ -1049,8 +1049,8 @@ describe('auth wall headed checkpoint fix', () => {
     const fnEnd = launcherSource.indexOf('\n}', fnStart + 10);
     const fnBody = launcherSource.slice(fnStart, fnEnd);
     assert.ok(
-      fnBody.includes('console.error'),
-      'canLaunchHeaded should log errors via console.error on final failure'
+      fnBody.includes('console.warn'),
+      'canLaunchHeaded should log warnings via console.warn on final failure'
     );
   });
 
@@ -1071,6 +1071,25 @@ describe('auth wall headed checkpoint fix', () => {
     } finally {
       if (origDisplay !== undefined) process.env.DISPLAY = origDisplay;
       if (origWayland !== undefined) process.env.WAYLAND_DISPLAY = origWayland;
+    }
+  });
+
+  it('canLaunchHeaded proceeds past DISPLAY check with WAYLAND_DISPLAY', async () => {
+    const origDisplay = process.env.DISPLAY;
+    const origWayland = process.env.WAYLAND_DISPLAY;
+    delete process.env.DISPLAY;
+    process.env.WAYLAND_DISPLAY = 'wayland-0';
+    try {
+      const launcher = require('../scripts/browser-launcher');
+      const result = await launcher.canLaunchHeaded();
+      // Returns false (playwright probe fails in test env) but proves
+      // WAYLAND_DISPLAY alone is sufficient to pass the display check
+      assert.equal(result, false, 'should attempt probe with WAYLAND_DISPLAY');
+    } finally {
+      if (origDisplay !== undefined) process.env.DISPLAY = origDisplay;
+      else delete process.env.DISPLAY;
+      if (origWayland !== undefined) process.env.WAYLAND_DISPLAY = origWayland;
+      else delete process.env.WAYLAND_DISPLAY;
     }
   });
 

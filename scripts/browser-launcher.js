@@ -162,7 +162,7 @@ async function canLaunchHeaded() {
       if (attempt < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 500));
       } else {
-        console.error('[WARN] Headed browser probe failed: ' + err.message);
+        console.warn('[WARN] Headed browser probe failed: ' + err.message);
       }
     }
   }
