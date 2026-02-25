@@ -46,7 +46,7 @@ Safe practice: always double-quote URL arguments.
 ### goto - Navigate to URL
 
 ```bash
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> [--no-auth-wall-detect] [--ensure-auth]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> [--no-auth-wall-detect] [--ensure-auth] [--wait-loaded]
 ```
 
 Navigates to a URL and automatically detects authentication walls using a three-heuristic detection system:
@@ -60,7 +60,9 @@ Use `--no-auth-wall-detect` to disable this automatic detection and skip the che
 
 Use `--ensure-auth` to actively poll for authentication completion instead of a timed checkpoint. When set, the headed browser polls with `checkAuthSuccess` at 2-second intervals using the URL-change heuristic. On success, the headed browser closes, a headless browser relaunches, and the original URL is loaded. On timeout, returns `ensureAuthCompleted: false`. This flag overrides `--no-auth-wall-detect`.
 
-Returns: `{ url, status, authWallDetected, checkpointCompleted, ensureAuthCompleted, snapshot }`
+Use `--wait-loaded` to wait for async-rendered content to finish loading before taking the snapshot. This combines network idle, DOM stability, loading indicator absence detection (spinners, skeletons, progress bars, aria-busy), and a final DOM quiet period. Use `--timeout <ms>` to set the wait timeout (default: 15000ms). Ideal for SPAs and pages that render content after the initial page load.
+
+Returns: `{ url, status, authWallDetected, checkpointCompleted, ensureAuthCompleted, waitLoaded, snapshot }`
 
 ### snapshot - Get Accessibility Tree
 
