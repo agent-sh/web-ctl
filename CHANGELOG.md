@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Added
+- Auto-install missing dependencies (playwright and Chromium) on first browser operation - eliminates manual setup step. Lockfile-based coordination prevents race conditions. Set `WEB_CTL_SKIP_AUTO_INSTALL=1` to disable in CI/sandboxed environments
 - `--ensure-auth` flag for goto action - polls for auth completion at 2s intervals using URL-change heuristic instead of a static timed checkpoint. On success, closes headed browser, relaunches headless, and loads the original URL. Overrides `--no-auth-wall-detect` so auth detection runs even when wall detection is disabled
 - Auto-detect authentication walls after goto navigation - uses three-heuristic detection (domain cookies, URL auth patterns, DOM login elements) and automatically opens headed checkpoint. Disable with `--no-auth-wall-detect` flag
 - Smart default snapshot scoping - snapshots automatically scope to `<main>` element (then `[role="main"]`, fallback to `<body>`), reducing output size by excluding navigation, headers, and footers. Use `--snapshot-full` to capture full page body when needed

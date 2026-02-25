@@ -822,6 +822,17 @@ function classifyError(err, { action, selector, snapshot } = {}) {
     };
   }
 
+  // Missing dependency (must be before 'not found' check for element_not_found)
+  if (msg.includes('Cannot find module')) {
+    const moduleName = msg.match(/Cannot find module '([^']+)'/)?.[1] || 'unknown';
+    const pluginDir = path.resolve(__dirname, '..');
+    return {
+      error: 'missing_dependency',
+      message: `Required dependency not found: ${moduleName}`,
+      suggestion: `Run: cd ${pluginDir} && npm install && npx playwright install chromium`
+    };
+  }
+
   // Element not found / strict mode violation
   if (msg.includes('not found') || msg.includes('waiting for locator') ||
       msg.includes('strict mode violation') || msg.includes('resolved to') ||
