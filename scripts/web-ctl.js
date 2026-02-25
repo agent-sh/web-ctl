@@ -21,7 +21,7 @@ const BOOLEAN_FLAGS = new Set([
   '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
   '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
-  '--snapshot-full', '--no-auth-wall-detect',
+  '--snapshot-full', '--no-auth-wall-detect', '--ensure-auth',
 ]);
 
 function validateSessionName(name) {
@@ -951,7 +951,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
         if (!url) throw new Error('URL required: run <session> goto <url>');
         validateUrl(url);
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        if (!opts.noAuthWallDetect) {
+        if (opts.ensureAuth || !opts.noAuthWallDetect) {
           const detection = await detectAuthWall(page, context, url);
           if (detection.detected) {
             console.warn('[WARN] Auth wall detected for ' + new URL(url).hostname);
@@ -963,13 +963,61 @@ async function runAction(sessionName, action, actionArgs, opts) {
               page = headedBrowser.page;
               await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
               const ckTimeout = Math.min(opts.timeout ? parseInt(opts.timeout, 10) : 120, 3600) * 1000;
-              console.warn('[WARN] Checkpoint open for ' + (ckTimeout / 1000) + 's');
-              await new Promise(resolve => setTimeout(resolve, ckTimeout));
-              const snapshot = await getSnapshot(page, opts);
-              result = { url: page.url(), authWallDetected: true, checkpointCompleted: true,
-                         ...(snapshot != null && { snapshot }) };
-              break;
+              if (opts.ensureAuth) {
+                console.warn('[WARN] Waiting for auth completion (' + (ckTimeout / 1000) + 's timeout)');
+                const pollInterval = 2000;
+                const startTime = Date.now();
+                let authCompleted = false;
+                while (Date.now() - startTime < ckTimeout) {
+                  await new Promise(resolve => setTimeout(resolve, pollInterval));
+                  if (page.isClosed()) break;
+                  try {
+                    const authResult = await checkAuthSuccess(page, context, url, { loginUrl: url });
+                    if (authResult.success) {
+                      authCompleted = true;
+                      break;
+                    }
+                  } catch { /* page may have navigated - retry next poll */ }
+                }
+                if (authCompleted) {
+                  await closeBrowser(sessionName, context);
+                  try {
+                    const headlessBrowser = await launchBrowser(sessionName, { headless: true });
+                    context = headlessBrowser.context;
+                    page = headlessBrowser.page;
+                    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+                    const snapshot = await getSnapshot(page, opts);
+                    result = { url: page.url(), authWallDetected: true, ensureAuthCompleted: true,
+                               ...(snapshot != null && { snapshot }) };
+                  } catch (relaunchErr) {
+                    result = { url, authWallDetected: true, ensureAuthCompleted: true,
+                               message: 'Auth completed but headless reload failed: ' + relaunchErr.message };
+                    context = null;
+                    page = null;
+                  }
+                  break;
+                } else {
+                  try { await closeBrowser(sessionName, context); } catch { /* already closed */ }
+                  result = { url, authWallDetected: true, ensureAuthCompleted: false,
+                             message: 'Auth did not complete within timeout' };
+                  context = null;
+                  page = null;
+                  break;
+                }
+              } else {
+                console.warn('[WARN] Checkpoint open for ' + (ckTimeout / 1000) + 's');
+                await new Promise(resolve => setTimeout(resolve, ckTimeout));
+                const snapshot = await getSnapshot(page, opts);
+                result = { url: page.url(), authWallDetected: true, checkpointCompleted: true,
+                           ...(snapshot != null && { snapshot }) };
+                break;
+              }
             } else {
+              if (opts.ensureAuth) {
+                result = { url: page.url(), authWallDetected: true, ensureAuthCompleted: false,
+                           message: 'Auth wall detected but no display available for headed browser.' };
+                break;
+              }
               const snapshot = await getSnapshot(page, opts);
               result = { url: page.url(), authWallDetected: true, checkpointCompleted: false,
                          message: 'Auth wall detected but no display for headed checkpoint.',
@@ -1138,7 +1186,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
       }
     } catch { /* ignore - page may have closed before URL read */ }
 
-    await closeBrowser(sessionName, context);
+    if (context) await closeBrowser(sessionName, context);
     sessionStore.unlockSession(sessionName);
     output({ ok: true, command: `run ${action}`, session: sessionName, ...(autoCreated && { autoCreated: true }), result });
 
@@ -1202,6 +1250,7 @@ Session commands:
 
 Run actions:
   goto <url>                    Navigate to URL
+    [--ensure-auth]             Poll for auth completion instead of timed checkpoint
   snapshot                      Get accessibility tree
   click <selector>              Click element
     [--wait-stable]             Wait for DOM + network to settle after click

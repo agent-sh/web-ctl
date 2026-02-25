@@ -759,3 +759,241 @@ describe('auth wall detection in goto', () => {
     );
   });
 });
+
+describe('--ensure-auth flag', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const webCtlSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+    'utf8'
+  );
+
+  it('BOOLEAN_FLAGS includes --ensure-auth', () => {
+    assert.ok(
+      webCtlSource.includes("'--ensure-auth'"),
+      '--ensure-auth should be in BOOLEAN_FLAGS'
+    );
+  });
+
+  it('help text contains --ensure-auth flag', () => {
+    assert.ok(
+      webCtlSource.includes('--ensure-auth'),
+      'help text should document --ensure-auth'
+    );
+  });
+
+  it('goto case references opts.ensureAuth', () => {
+    assert.ok(
+      webCtlSource.includes('opts.ensureAuth'),
+      'goto case should check ensureAuth flag'
+    );
+  });
+
+  it('goto case calls checkAuthSuccess when ensureAuth is set', () => {
+    // Verify checkAuthSuccess is called within the ensureAuth block
+    const ensureAuthIdx = webCtlSource.indexOf('if (opts.ensureAuth)');
+    const checkAuthIdx = webCtlSource.indexOf('checkAuthSuccess(page, context, url, { loginUrl: url })', ensureAuthIdx);
+    assert.ok(ensureAuthIdx > 0, 'opts.ensureAuth guard should exist');
+    assert.ok(checkAuthIdx > ensureAuthIdx, 'checkAuthSuccess should be called after ensureAuth check');
+  });
+
+  it('result includes ensureAuthCompleted on success path', () => {
+    assert.ok(
+      webCtlSource.includes('ensureAuthCompleted: true'),
+      'success result should include ensureAuthCompleted: true'
+    );
+  });
+
+  it('result includes ensureAuthCompleted on timeout path', () => {
+    assert.ok(
+      webCtlSource.includes('ensureAuthCompleted: false'),
+      'timeout result should include ensureAuthCompleted: false'
+    );
+  });
+
+  it('timeout result includes descriptive message', () => {
+    assert.ok(
+      webCtlSource.includes('Auth did not complete within timeout'),
+      'timeout path should include descriptive message'
+    );
+  });
+
+  it('no-display path returns ensureAuthCompleted false', () => {
+    assert.ok(
+      webCtlSource.includes('no display available for headed browser'),
+      'no-display path should include descriptive message when ensureAuth is set'
+    );
+  });
+
+  it('ensureAuth overrides noAuthWallDetect in guard condition', () => {
+    assert.ok(
+      webCtlSource.includes('opts.ensureAuth || !opts.noAuthWallDetect'),
+      'guard should allow ensureAuth to override noAuthWallDetect'
+    );
+  });
+
+  it('relaunches headless browser after auth success', () => {
+    const ensureAuthIdx = webCtlSource.indexOf('if (opts.ensureAuth)');
+    const headlessRelaunch = webCtlSource.indexOf("launchBrowser(sessionName, { headless: true })", ensureAuthIdx);
+    assert.ok(headlessRelaunch > ensureAuthIdx, 'should relaunch headless browser after successful auth');
+  });
+
+  it('polls at 2s intervals', () => {
+    assert.ok(
+      webCtlSource.includes('const pollInterval = 2000'),
+      'poll interval should be 2000ms'
+    );
+  });
+
+  it('checks page.isClosed() before polling', () => {
+    const ensureAuthIdx = webCtlSource.indexOf('if (opts.ensureAuth)');
+    const isClosedIdx = webCtlSource.indexOf('page.isClosed()', ensureAuthIdx);
+    assert.ok(isClosedIdx > ensureAuthIdx, 'should check page.isClosed() in polling loop');
+  });
+
+  it('wraps checkAuthSuccess in try-catch during polling', () => {
+    const ensureAuthIdx = webCtlSource.indexOf('if (opts.ensureAuth)');
+    const nextCheckpoint = webCtlSource.indexOf('} else {', ensureAuthIdx + 200);
+    const pollBlock = webCtlSource.slice(ensureAuthIdx, nextCheckpoint);
+    assert.ok(
+      pollBlock.includes('try {') && pollBlock.includes('checkAuthSuccess'),
+      'checkAuthSuccess should be wrapped in try-catch within polling loop'
+    );
+  });
+
+  it('guards closeBrowser with context null check on normal exit', () => {
+    assert.ok(
+      webCtlSource.includes('if (context) await closeBrowser(sessionName, context)'),
+      'normal exit should guard closeBrowser with context null check'
+    );
+  });
+
+  it('nullifies context and page on timeout path', () => {
+    const timeoutIdx = webCtlSource.indexOf('Auth did not complete within timeout');
+    const nextBreak = webCtlSource.indexOf('break;', timeoutIdx);
+    const block = webCtlSource.slice(timeoutIdx, nextBreak);
+    assert.ok(block.includes('context = null'), 'timeout path should set context to null');
+    assert.ok(block.includes('page = null'), 'timeout path should set page to null');
+  });
+
+  it('breaks polling loop when page is closed', () => {
+    const ensureAuthIdx = webCtlSource.indexOf('if (opts.ensureAuth)');
+    const pollBlock = webCtlSource.slice(ensureAuthIdx, ensureAuthIdx + 600);
+    assert.ok(
+      pollBlock.includes('if (page.isClosed()) break'),
+      'polling loop should break when page is closed'
+    );
+  });
+
+  it('wraps headless relaunch in try-catch on success path', () => {
+    const authCompletedIdx = webCtlSource.indexOf('if (authCompleted)');
+    const elseIdx = webCtlSource.indexOf('} else {', authCompletedIdx + 50);
+    const successBlock = webCtlSource.slice(authCompletedIdx, elseIdx);
+    assert.ok(
+      successBlock.includes('try {') && successBlock.includes('launchBrowser'),
+      'success path should wrap headless relaunch in try-catch'
+    );
+  });
+
+  it('wraps closeBrowser in try-catch on timeout path', () => {
+    const elseIdx = webCtlSource.indexOf('Auth did not complete within timeout');
+    const beforeTimeout = webCtlSource.slice(elseIdx - 300, elseIdx);
+    assert.ok(
+      beforeTimeout.includes('try { await closeBrowser'),
+      'timeout path should wrap closeBrowser in try-catch'
+    );
+  });
+});
+
+describe('--ensure-auth flag parsing', () => {
+  const BOOLEAN_FLAGS = new Set([
+    '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
+    '--exact', '--accept', '--submit', '--dismiss', '--auto',
+    '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
+    '--snapshot-full', '--no-auth-wall-detect', '--ensure-auth',
+  ]);
+
+  function parseOptions(args) {
+    const opts = {};
+    for (let i = 0; i < args.length; i++) {
+      if (args[i].startsWith('--')) {
+        const key = args[i].slice(2).replace(/-([a-z])/g, (_, c) => c.toUpperCase());
+        const next = args[i + 1];
+        if (next && !next.startsWith('--') && !BOOLEAN_FLAGS.has(args[i])) {
+          opts[key] = next;
+          i++;
+        } else {
+          opts[key] = true;
+        }
+      }
+    }
+    return opts;
+  }
+
+  it('--ensure-auth parses as boolean true', () => {
+    const opts = parseOptions(['--ensure-auth']);
+    assert.equal(opts.ensureAuth, true);
+  });
+
+  it('--ensure-auth does not consume next positional arg', () => {
+    const opts = parseOptions(['--ensure-auth', 'https://example.com']);
+    assert.equal(opts.ensureAuth, true);
+    assert.equal(opts['https://example.com'], undefined);
+  });
+
+  it('--ensure-auth works alongside --timeout', () => {
+    const opts = parseOptions(['--ensure-auth', '--timeout', '60']);
+    assert.equal(opts.ensureAuth, true);
+    assert.equal(opts.timeout, '60');
+  });
+
+  it('--ensure-auth works alongside --no-auth-wall-detect', () => {
+    const opts = parseOptions(['--ensure-auth', '--no-auth-wall-detect']);
+    assert.equal(opts.ensureAuth, true);
+    assert.equal(opts.noAuthWallDetect, true);
+  });
+});
+
+describe('--ensure-auth CLI integration', () => {
+  const { beforeEach, afterEach } = require('node:test');
+  const fs = require('fs');
+  const path = require('path');
+  const os = require('os');
+  const { execFileSync } = require('child_process');
+
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-ctl-ensure-auth-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function runCliSafe(...args) {
+    try {
+      const result = execFileSync(process.execPath, [
+        path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+        ...args
+      ], {
+        env: { ...process.env, AI_STATE_DIR: tmpDir },
+        encoding: 'utf8',
+        timeout: 15000
+      });
+      return JSON.parse(result);
+    } catch (err) {
+      if (err.stdout) {
+        try { return JSON.parse(err.stdout); } catch { /* fall through */ }
+      }
+      throw err;
+    }
+  }
+
+  it('goto with --ensure-auth against example.com runs without error', () => {
+    const result = runCliSafe('run', 'authtest', 'goto', 'https://example.com', '--ensure-auth');
+    assert.ok(result, 'should return a result');
+    assert.notEqual(result.error, 'invalid_flag',
+      '--ensure-auth should not cause an invalid flag error');
+  });
+});
