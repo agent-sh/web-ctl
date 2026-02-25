@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const sessionStore = require('./session-store');
+const { ensurePlaywright } = require('./ensure-deps');
 
 const IN_WSL = isWSL();
 
@@ -63,6 +64,7 @@ function cleanSingletonLock(profileDir) {
  * @returns {{ context, page }}
  */
 async function launchBrowser(sessionName, options = {}) {
+  ensurePlaywright();
   const { chromium } = require('playwright');
 
   const profileDir = sessionStore.getProfileDir(sessionName);
@@ -150,6 +152,7 @@ async function canLaunchHeaded() {
   const maxAttempts = 2;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
+      ensurePlaywright();
       const { chromium } = require('playwright');
       const ctx = await chromium.launchPersistentContext('', {
         headless: false,

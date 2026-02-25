@@ -2,6 +2,7 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
+const path = require('path');
 
 // Extract classifyError for testing by requiring the module internals
 // Since classifyError is not exported, we test it via the error patterns it handles
@@ -28,6 +29,17 @@ describe('error classification patterns', () => {
         error: 'no_display',
         message: 'No display available for headed browser.',
         suggestion: 'Use --vnc flag or install: sudo apt-get install xvfb x11vnc'
+      };
+    }
+
+    // Missing dependency (must be before 'not found' check for element_not_found)
+    if (msg.includes('Cannot find module')) {
+      const moduleName = msg.match(/Cannot find module '([^']+)'/)?.[1] || 'unknown';
+      const pluginDir = path.resolve(__dirname, '..');
+      return {
+        error: 'missing_dependency',
+        message: `Required dependency not found: ${moduleName}`,
+        suggestion: `Run: cd ${pluginDir} && npm install && npx playwright install chromium`
       };
     }
 
@@ -140,6 +152,34 @@ describe('error classification patterns', () => {
   it('truncates multi-line error messages', () => {
     const result = classifyError(new Error('First line\nSecond line\nThird line'), { action: 'click' });
     assert.equal(result.message, 'First line');
+  });
+
+  it('classifies missing dependency errors', () => {
+    const result = classifyError(
+      new Error("Cannot find module 'playwright'"),
+      { action: 'goto' }
+    );
+    assert.equal(result.error, 'missing_dependency');
+    assert.ok(result.message.includes('playwright'));
+    assert.ok(result.suggestion.includes('npm install'));
+  });
+
+  it('missing dependency does NOT match element_not_found', () => {
+    const result = classifyError(
+      new Error("Cannot find module 'playwright'"),
+      { action: 'click', selector: 'css=button' }
+    );
+    assert.equal(result.error, 'missing_dependency');
+    assert.notEqual(result.error, 'element_not_found');
+  });
+
+  it('extracts module name from Cannot find module error', () => {
+    const result = classifyError(
+      new Error("Cannot find module 'some-other-dep'"),
+      { action: 'goto' }
+    );
+    assert.equal(result.error, 'missing_dependency');
+    assert.ok(result.message.includes('some-other-dep'));
   });
 });
 
