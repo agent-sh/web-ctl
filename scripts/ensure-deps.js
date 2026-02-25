@@ -83,9 +83,6 @@ function releaseLock() {
  * Set WEB_CTL_SKIP_AUTO_INSTALL=1 to disable auto-install (for CI/sandboxed
  * environments). When set, throws an error with manual install instructions
  * if playwright is missing.
- *
- * Note: execSync is used with hardcoded commands only (no user input),
- * so shell injection is not a concern here.
  */
 function ensurePlaywright() {
   if (_playwrightVerified) return;
