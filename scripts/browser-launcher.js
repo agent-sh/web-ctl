@@ -203,10 +203,8 @@ async function waitForStable(page, { timeout = 5000 } = {}) {
  * @param {object} options - { timeout: number (ms, default 15000) }
  */
 async function waitForLoaded(page, { timeout = 15000 } = {}) {
-  // Phase 1: Network idle + DOM stability (reuse existing)
   await waitForStable(page, { timeout });
 
-  // Phase 2: Wait for loading indicators to disappear
   const deadline = Date.now() + timeout;
   const POLL_MS = 200;
   await page.evaluate(({ pollMs, deadlineTs }) => new Promise(resolve => {
@@ -239,7 +237,6 @@ async function waitForLoaded(page, { timeout = 15000 } = {}) {
     poll();
   }), { pollMs: POLL_MS, deadlineTs: deadline });
 
-  // Phase 3: Short DOM quiet wait to catch final renders
   const remaining = Math.max(deadline - Date.now(), 0);
   if (remaining > 300) {
     const DOM_QUIET_MS = 300;
