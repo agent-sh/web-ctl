@@ -957,6 +957,8 @@ async function runAction(sessionName, action, actionArgs, opts) {
           if (detection.detected) {
             console.warn('[WARN] Auth wall detected for ' + new URL(url).hostname);
             await closeBrowser(sessionName, context);
+            // Settle: allow Chromium to fully release OS resources before headed probe
+            await new Promise(resolve => setTimeout(resolve, 500));
             const headed = await canLaunchHeaded();
             if (headed) {
               const headedBrowser = await launchBrowser(sessionName, { headless: false });
