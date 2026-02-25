@@ -997,3 +997,65 @@ describe('--ensure-auth CLI integration', () => {
       '--ensure-auth should not cause an invalid flag error');
   });
 });
+
+describe('auth wall headed checkpoint fix', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const launcherSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'browser-launcher.js'),
+    'utf8'
+  );
+  const webCtlSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+    'utf8'
+  );
+
+  it('browser-launcher.js does not cache canLaunchHeaded result', () => {
+    assert.ok(
+      !launcherSource.includes('_headedResult'),
+      'browser-launcher.js should not contain _headedResult caching variable'
+    );
+  });
+
+  it('canLaunchHeaded retries with setTimeout delay between attempts', () => {
+    // Verify retry loop exists with maxAttempts and setTimeout
+    assert.ok(
+      launcherSource.includes('maxAttempts'),
+      'canLaunchHeaded should use maxAttempts for retry logic'
+    );
+    const fnStart = launcherSource.indexOf('async function canLaunchHeaded()');
+    const fnEnd = launcherSource.indexOf('\n}', fnStart + 10);
+    const fnBody = launcherSource.slice(fnStart, fnEnd);
+    assert.ok(
+      fnBody.includes('setTimeout(resolve, 500)'),
+      'canLaunchHeaded should have a 500ms delay between retry attempts'
+    );
+  });
+
+  it('web-ctl.js has settling delay between closeBrowser and canLaunchHeaded', () => {
+    const closeIdx = webCtlSource.indexOf('await closeBrowser(sessionName, context)');
+    const headedIdx = webCtlSource.indexOf('const headed = await canLaunchHeaded()');
+    assert.ok(closeIdx > 0, 'closeBrowser call should exist');
+    assert.ok(headedIdx > closeIdx, 'canLaunchHeaded should follow closeBrowser');
+    const between = webCtlSource.slice(closeIdx, headedIdx);
+    assert.ok(
+      between.includes('setTimeout(resolve, 500)'),
+      'there should be a settling delay between closeBrowser and canLaunchHeaded'
+    );
+  });
+
+  it('canLaunchHeaded logs errors on final probe failure', () => {
+    const fnStart = launcherSource.indexOf('async function canLaunchHeaded()');
+    const fnEnd = launcherSource.indexOf('\n}', fnStart + 10);
+    const fnBody = launcherSource.slice(fnStart, fnEnd);
+    assert.ok(
+      fnBody.includes('console.error'),
+      'canLaunchHeaded should log errors via console.error on final failure'
+    );
+  });
+
+  it('canLaunchHeaded is exported and is a function', () => {
+    const launcher = require('../scripts/browser-launcher');
+    assert.equal(typeof launcher.canLaunchHeaded, 'function');
+  });
+});

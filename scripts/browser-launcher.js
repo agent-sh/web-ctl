@@ -140,32 +140,33 @@ async function closeBrowser(sessionName, context) {
 
 /**
  * Test whether a headed (non-headless) browser can launch on this system.
- * Caches result after first check.
+ * Retries once on failure to handle transient resource contention.
  */
-let _headedResult = null;
 async function canLaunchHeaded() {
-  if (_headedResult !== null) return _headedResult;
-
-  // No DISPLAY at all - definitely can't launch headed
   if (!process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
-    _headedResult = false;
     return false;
   }
 
-  // Try a quick headed launch
   const { chromium } = require('playwright');
-  try {
-    const ctx = await chromium.launchPersistentContext('', {
-      headless: false,
-      args: ['--no-first-run', '--no-default-browser-check'],
-      timeout: 5000
-    });
-    await ctx.close();
-    _headedResult = true;
-  } catch {
-    _headedResult = false;
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const ctx = await chromium.launchPersistentContext('', {
+        headless: false,
+        args: ['--no-first-run', '--no-default-browser-check'],
+        timeout: 5000
+      });
+      await ctx.close();
+      return true;
+    } catch (err) {
+      if (attempt < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 500));
+      } else {
+        console.error('[WARN] Headed browser probe failed: ' + err.message);
+      }
+    }
   }
-  return _headedResult;
+  return false;
 }
 
 /**
