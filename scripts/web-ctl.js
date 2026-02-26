@@ -3,7 +3,7 @@
 
 const sessionStore = require('./session-store');
 const { launchBrowser, closeBrowser, randomDelay, waitForStable, waitForLoaded, canLaunchHeaded } = require('./browser-launcher');
-const { detectAuthWall } = require('./auth-wall-detect');
+const { detectAuthWall, detectContentBlocked } = require('./auth-wall-detect');
 const { runAuthFlow } = require('./auth-flow');
 const { checkAuthSuccess } = require('./auth-check');
 const { sanitizeWebContent, wrapOutput } = require('./redact');
@@ -21,7 +21,7 @@ const BOOLEAN_FLAGS = new Set([
   '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
   '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
-  '--snapshot-full', '--no-auth-wall-detect', '--ensure-auth', '--wait-loaded',
+  '--snapshot-full', '--no-auth-wall-detect', '--no-content-block-detect', '--ensure-auth', '--wait-loaded',
 ]);
 
 function validateSessionName(name) {
@@ -55,6 +55,37 @@ function parseOptions(args) {
     }
   }
   return opts;
+}
+
+/**
+ * Match a provider by domain from providers.json.
+ * Uses a lazy-loaded Map keyed by domain for O(1) lookup.
+ */
+let _providerDomainMap = null;
+function matchProviderByDomain(url) {
+  if (!_providerDomainMap) {
+    _providerDomainMap = new Map();
+    try {
+      const providers = require('./providers.json');
+      for (const p of providers) {
+        try {
+          const domain = new URL(p.loginUrl).hostname;
+          _providerDomainMap.set(domain, p);
+        } catch {
+          // Skip provider with invalid loginUrl
+        }
+      }
+    } catch {
+      // providers.json load failed - return null for all lookups
+    }
+  }
+
+  try {
+    const domain = new URL(url).hostname;
+    return _providerDomainMap.get(domain) || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -1056,8 +1087,28 @@ async function runAction(sessionName, action, actionArgs, opts) {
         if (opts.waitLoaded) {
           await waitForLoaded(page, { timeout: loadedTimeout });
         }
+        // Content blocking detection (e.g. X.com empty feeds in headless)
+        let contentBlockResult = null;
+        if (!opts.noContentBlockDetect) {
+          const provider = matchProviderByDomain(url);
+          contentBlockResult = await detectContentBlocked(page, {
+            contentSelectors: provider?.contentSelectors,
+            contentBlockedIndicators: provider?.contentBlockedIndicators
+          });
+        }
         const snapshot = await getSnapshot(page, opts);
-        result = { url: page.url(), status: response ? response.status() : null, ...(opts.waitLoaded && { waitLoaded: true }), ...(snapshot != null && { snapshot }) };
+        result = {
+          url: page.url(),
+          status: response ? response.status() : null,
+          ...(opts.waitLoaded && { waitLoaded: true }),
+          ...(contentBlockResult?.detected && {
+            contentBlocked: true,
+            warning: 'content_blocked',
+            contentBlockedReason: contentBlockResult.reason,
+            suggestion: "Site may be blocking headless browsers. Try: (1) authenticate with 'session auth <name> --provider <provider>', (2) use --ensure-auth for headed mode"
+          }),
+          ...(snapshot != null && { snapshot })
+        };
         break;
       }
 
@@ -1282,6 +1333,7 @@ Run actions:
   goto <url>                    Navigate to URL
     [--ensure-auth]             Poll for auth completion instead of timed checkpoint
     [--wait-loaded]             Wait for async content to finish rendering
+    [--no-content-block-detect] Skip content blocking detection
     [--timeout <ms>]            Wait timeout (default: 15000)
   snapshot                      Get accessibility tree
   click <selector>              Click element

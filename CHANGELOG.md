@@ -28,6 +28,7 @@
 - `--min-wait <seconds>` flag for `session auth` to configure grace period before auth success polling starts (default: 5 seconds, clamped to 0-300)
 - `--max-field-length <N>` flag for `extract` macro to configure maximum characters per extracted field (default: 500, max: 2000)
 - `--wait-loaded` flag for goto action - waits for async-rendered content to finish loading before taking the snapshot. Combines network idle, DOM stability, and loading indicator absence detection (spinners, skeletons, progress bars, aria-busy). Use `--timeout <ms>` to set wait timeout (default: 15000ms)
+- Automatic content blocking detection in goto action - detects when sites serve pages but block content from headless browsers (e.g., X.com empty timelines). Uses provider-specific heuristics (content selectors, blocked indicators) and generic checks (empty content, persistent spinners). Response includes `contentBlocked: true`, `warning: 'content_blocked'`, and recovery suggestions. Disable with `--no-content-block-detect` flag
 
 ### Fixed
 - Smart default snapshot scoping now includes complementary ARIA landmarks (`<aside>`, `[role="complementary"]`) alongside `<main>`, capturing sidebar content like repository stats (#26)
