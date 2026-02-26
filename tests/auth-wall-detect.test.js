@@ -4,9 +4,11 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   detectAuthWall,
+  detectContentBlocked,
   AUTH_URL_PATTERNS,
   AUTH_DOM_SELECTORS,
-  AUTH_TEXT_PATTERNS
+  AUTH_TEXT_PATTERNS,
+  CONTENT_BLOCKED_TEXT_PATTERNS
 } = require('../scripts/auth-wall-detect');
 
 // --- Mock helpers ---
@@ -234,5 +236,14 @@ describe('detectAuthWall', () => {
     assert.ok(AUTH_URL_PATTERNS.length > 0, 'AUTH_URL_PATTERNS should not be empty');
     assert.ok(AUTH_DOM_SELECTORS.length > 0, 'AUTH_DOM_SELECTORS should not be empty');
     assert.ok(AUTH_TEXT_PATTERNS.length > 0, 'AUTH_TEXT_PATTERNS should not be empty');
+  });
+
+  it('exports detectContentBlocked as a function', () => {
+    assert.equal(typeof detectContentBlocked, 'function');
+  });
+
+  it('exports CONTENT_BLOCKED_TEXT_PATTERNS as a non-empty array', () => {
+    assert.ok(Array.isArray(CONTENT_BLOCKED_TEXT_PATTERNS), 'CONTENT_BLOCKED_TEXT_PATTERNS should be an array');
+    assert.ok(CONTENT_BLOCKED_TEXT_PATTERNS.length > 0, 'CONTENT_BLOCKED_TEXT_PATTERNS should not be empty');
   });
 });
