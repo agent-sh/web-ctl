@@ -75,10 +75,12 @@ async function launchBrowser(sessionName, options = {}) {
 
   const launchOptions = {
     headless,
+    viewport: { width: 1920, height: 1080 },
     args: [
       '--disable-blink-features=AutomationControlled',
       '--no-first-run',
-      '--no-default-browser-check'
+      '--no-default-browser-check',
+      '--window-size=1920,1080'
     ]
   };
 
@@ -146,6 +148,34 @@ async function launchBrowser(sessionName, options = {}) {
       }
       return origQuery(params);
     };
+
+    // Remove CDP detection artifacts (window.cdc_* variables)
+    for (const key of Object.keys(window)) {
+      if (/^cdc_/.test(key)) delete window[key];
+    }
+
+    // Screen dimensions (headless reports 0 for outerWidth/outerHeight)
+    Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth });
+    Object.defineProperty(window, 'outerHeight', { get: () => window.innerHeight + 85 });
+    Object.defineProperty(screen, 'availWidth', { get: () => screen.width });
+    Object.defineProperty(screen, 'availHeight', { get: () => screen.height - 40 });
+
+    // navigator.connection (missing in some headless environments)
+    if (!navigator.connection) {
+      Object.defineProperty(navigator, 'connection', {
+        get: () => ({ effectiveType: '4g', rtt: 50, downlink: 10, saveData: false })
+      });
+    }
+
+    // Prevent WebRTC local IP leak (fingerprinting signal)
+    if (window.RTCPeerConnection) {
+      const OrigRTC = window.RTCPeerConnection;
+      window.RTCPeerConnection = function(config, constraints) {
+        if (config && config.iceServers) config.iceServers = [];
+        return new OrigRTC(config, constraints);
+      };
+      window.RTCPeerConnection.prototype = OrigRTC.prototype;
+    }
   });
 
   // Get or create the first page
