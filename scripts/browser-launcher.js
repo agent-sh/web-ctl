@@ -106,7 +106,44 @@ async function launchBrowser(sessionName, options = {}) {
 
   // Anti-bot init script on all pages
   await context.addInitScript(() => {
+    // Hide webdriver flag
     Object.defineProperty(navigator, 'webdriver', { get: () => false });
+
+    // Spoof window.chrome object (present in real Chrome, missing in headless)
+    if (!window.chrome) {
+      window.chrome = { runtime: {}, csi: function() {}, loadTimes: function() {} };
+    }
+
+    // Spoof navigator.plugins to appear non-empty (headless has empty PluginArray)
+    Object.defineProperty(navigator, 'plugins', {
+      get: () => {
+        const arr = [{ name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' }];
+        arr.item = (i) => arr[i];
+        arr.namedItem = (n) => arr.find(p => p.name === n) || null;
+        arr.refresh = () => {};
+        return arr;
+      }
+    });
+
+    // Set navigator.languages (headless may report empty or single-entry)
+    Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+
+    // Override WebGL renderer to common hardware (Intel Iris)
+    const getParameter = WebGLRenderingContext.prototype.getParameter;
+    WebGLRenderingContext.prototype.getParameter = function(param) {
+      if (param === 0x9245) return 'Intel Inc.';           // UNMASKED_VENDOR_WEBGL
+      if (param === 0x9246) return 'Intel Iris OpenGL Engine'; // UNMASKED_RENDERER_WEBGL
+      return getParameter.call(this, param);
+    };
+
+    // Override permissions.query for 'notifications' (headless returns 'prompt')
+    const origQuery = navigator.permissions.query.bind(navigator.permissions);
+    navigator.permissions.query = (params) => {
+      if (params.name === 'notifications') {
+        return Promise.resolve({ state: 'denied', onchange: null });
+      }
+      return origQuery(params);
+    };
   });
 
   // Get or create the first page
