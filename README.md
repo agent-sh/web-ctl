@@ -94,7 +94,7 @@ web-ctl session end github
 
 | Action | Usage | Returns |
 |--------|-------|---------|
-| `goto` | `run <s> goto <url> [--no-auth-wall-detect] [--no-content-block-detect] [--ensure-auth] [--wait-loaded]` | `{ url, status, authWallDetected, checkpointCompleted, ensureAuthCompleted, waitLoaded, contentBlocked, warning, snapshot }` |
+| `goto` | `run <s> goto <url> [--no-auth-wall-detect] [--no-content-block-detect] [--no-auto-recover] [--ensure-auth] [--wait-loaded]` | `{ url, status, authWallDetected, checkpointCompleted, ensureAuthCompleted, waitLoaded, contentBlocked, headedFallback, warning, snapshot }` |
 | `snapshot` | `run <s> snapshot` | `{ url, snapshot }` |
 | `click` | `run <s> click <sel> [--wait-stable]` | `{ url, clicked, snapshot }` |
 | `click-wait` | `run <s> click-wait <sel> [--timeout]` | `{ url, clicked, settled, snapshot }` |
@@ -174,6 +174,7 @@ This eliminates the common click-snapshot-check loop that wastes agent turns on 
 | `--allow-evaluate` | `evaluate` | Required safety flag for JS execution |
 | `--no-auth-wall-detect` | `goto` | Disable automatic auth wall detection and checkpoint opening |
 | `--no-content-block-detect` | `goto` | Disable automatic content blocking detection (e.g., sites serving empty pages to headless browsers) |
+| `--no-auto-recover` | `goto` | Disable automatic headed fallback when content is blocked in headless mode |
 | `--ensure-auth` | `goto` | Poll for auth completion instead of timed checkpoint; overrides `--no-auth-wall-detect` |
 | `--wait-loaded` | `goto` | Wait for async content to finish rendering (network idle + loading indicator absence + DOM quiet) |
 | `--snapshot-depth <N>` | Any action with snapshot | Limit ARIA tree depth (e.g. 3 for top 3 levels) |
