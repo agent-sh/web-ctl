@@ -837,6 +837,54 @@ describe('content blocking detection in goto', () => {
   });
 });
 
+describe('auto headed fallback in goto', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const webCtlSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+    'utf8'
+  );
+
+  it('--no-auto-recover is a valid boolean flag', () => {
+    assert.ok(
+      webCtlSource.includes("'--no-auto-recover'"),
+      '--no-auto-recover should be in BOOLEAN_FLAGS'
+    );
+  });
+
+  it('goto case checks noAutoRecover flag', () => {
+    assert.ok(
+      webCtlSource.includes('noAutoRecover'),
+      'goto case should check noAutoRecover flag'
+    );
+  });
+
+  it('goto case includes headedFallback in result', () => {
+    assert.ok(
+      webCtlSource.includes('headedFallback: true'),
+      'result should include headedFallback: true when fallback used'
+    );
+    assert.ok(
+      webCtlSource.includes('headedFallback: false'),
+      'result should include headedFallback: false when fallback unavailable'
+    );
+  });
+
+  it('goto case launches headed browser on content block', () => {
+    assert.ok(
+      webCtlSource.includes('Content blocked in headless - falling back to headed browser'),
+      'should warn about headed fallback'
+    );
+  });
+
+  it('goto case handles headed fallback errors gracefully', () => {
+    assert.ok(
+      webCtlSource.includes('Headed fallback failed'),
+      'should handle headed fallback errors'
+    );
+  });
+});
+
 describe('--ensure-auth flag', () => {
   const fs = require('fs');
   const path = require('path');
