@@ -883,6 +883,27 @@ describe('auto headed fallback in goto', () => {
       'should handle headed fallback errors'
     );
   });
+
+  it('goto case re-detects content blocking in headed mode', () => {
+    assert.ok(
+      webCtlSource.includes('headedBlockResult'),
+      'should re-run content blocking detection after headed fallback'
+    );
+  });
+
+  it('goto case uses cached canLaunchHeaded', () => {
+    assert.ok(
+      webCtlSource.includes('cachedCanLaunchHeaded'),
+      'should use cached headed availability check'
+    );
+  });
+
+  it('goto case captures headless snapshot before fallback', () => {
+    assert.ok(
+      webCtlSource.includes('headlessSnapshot'),
+      'should save headless snapshot before closing browser'
+    );
+  });
 });
 
 describe('--ensure-auth flag', () => {

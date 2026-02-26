@@ -62,10 +62,10 @@ describe('browser stealth init script', () => {
     );
   });
 
-  it('removes CDP detection artifacts', () => {
+  it('removes known CDP detection artifacts', () => {
     assert.ok(
-      launcherSource.includes('cdc_'),
-      'should remove cdc_ variables'
+      launcherSource.includes('cdc_adoQpoasnfa76pfcZLmcfl_Array'),
+      'should target known CDP artifact names'
     );
   });
 

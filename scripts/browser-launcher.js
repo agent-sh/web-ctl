@@ -149,10 +149,9 @@ async function launchBrowser(sessionName, options = {}) {
       return origQuery(params);
     };
 
-    // Remove CDP detection artifacts (window.cdc_* variables)
-    for (const key of Object.keys(window)) {
-      if (/^cdc_/.test(key)) delete window[key];
-    }
+    // Remove known CDP detection artifacts (targeted list, avoids Object.keys(window) scan)
+    ['cdc_adoQpoasnfa76pfcZLmcfl_Array', 'cdc_adoQpoasnfa76pfcZLmcfl_Promise',
+     'cdc_adoQpoasnfa76pfcZLmcfl_Symbol'].forEach(k => { try { delete window[k]; } catch {} });
 
     // Screen dimensions (headless reports 0 for outerWidth/outerHeight)
     Object.defineProperty(window, 'outerWidth', { get: () => window.innerWidth });
@@ -171,8 +170,8 @@ async function launchBrowser(sessionName, options = {}) {
     if (window.RTCPeerConnection) {
       const OrigRTC = window.RTCPeerConnection;
       window.RTCPeerConnection = function(config, constraints) {
-        if (config && config.iceServers) config.iceServers = [];
-        return new OrigRTC(config, constraints);
+        const safeConfig = config ? { ...config, iceServers: [] } : config;
+        return new OrigRTC(safeConfig, constraints);
       };
       window.RTCPeerConnection.prototype = OrigRTC.prototype;
     }

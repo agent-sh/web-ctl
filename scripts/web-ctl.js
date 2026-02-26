@@ -89,6 +89,22 @@ function matchProviderByDomain(url) {
 }
 
 /**
+ * Cached result for canLaunchHeaded (display availability rarely changes mid-session).
+ * TTL: 60 seconds.
+ */
+let _headedCache = null;
+let _headedCacheTime = 0;
+const HEADED_CACHE_TTL = 60000;
+async function cachedCanLaunchHeaded() {
+  if (_headedCache !== null && Date.now() - _headedCacheTime < HEADED_CACHE_TTL) {
+    return _headedCache;
+  }
+  _headedCache = await canLaunchHeaded();
+  _headedCacheTime = Date.now();
+  return _headedCache;
+}
+
+/**
  * Convert selector string to Playwright locator.
  */
 function resolveSelector(page, selector) {
@@ -1098,34 +1114,61 @@ async function runAction(sessionName, action, actionArgs, opts) {
         }
         // Auto headed fallback when content is blocked
         if (contentBlockResult?.detected && !opts.noAutoRecover) {
-          const headed = await canLaunchHeaded();
+          const headed = await cachedCanLaunchHeaded();
           if (headed) {
             console.warn('[WARN] Content blocked in headless - falling back to headed browser');
+            // Save headless snapshot before closing (fallback may fail)
+            const headlessSnapshot = await getSnapshot(page, opts);
+            const headlessUrl = page.url();
+            const headlessStatus = response ? response.status() : null;
             await closeBrowser(sessionName, context);
             await new Promise(resolve => setTimeout(resolve, 500));
-            const headedBrowser = await launchBrowser(sessionName, { headless: false });
-            context = headedBrowser.context;
-            page = headedBrowser.page;
             try {
-              await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+              const headedBrowser = await launchBrowser(sessionName, { headless: false });
+              context = headedBrowser.context;
+              page = headedBrowser.page;
+              const headedResponse = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
               if (opts.waitLoaded) {
                 await waitForLoaded(page, { timeout: loadedTimeout });
               }
+              // Re-detect content blocking in headed mode
+              const headedProvider = matchProviderByDomain(url);
+              const headedBlockResult = await detectContentBlocked(page, {
+                contentSelectors: headedProvider?.contentSelectors,
+                contentBlockedIndicators: headedProvider?.contentBlockedIndicators
+              });
               const headedSnapshot = await getSnapshot(page, opts);
               result = {
                 url: page.url(),
-                status: response ? response.status() : null,
+                status: headedResponse ? headedResponse.status() : null,
                 contentBlocked: true,
                 headedFallback: true,
-                warning: 'content_blocked_headed_fallback',
-                suggestion: 'Content was blocked in headless mode. Retrieved via headed browser.',
+                ...(headedBlockResult?.detected && { headedAlsoBlocked: true }),
+                warning: headedBlockResult?.detected ? 'content_blocked_headed_also' : 'content_blocked_headed_fallback',
+                suggestion: headedBlockResult?.detected
+                  ? 'Content blocked in both headless and headed modes.'
+                  : 'Content was blocked in headless mode. Retrieved via headed browser.',
                 ...(opts.waitLoaded && { waitLoaded: true }),
                 ...(headedSnapshot != null && { snapshot: headedSnapshot })
               };
               break;
             } catch (fallbackErr) {
               console.warn('[WARN] Headed fallback failed: ' + fallbackErr.message);
-              // Fall through to return the headless result with warning
+              // Return headless result captured before close
+              context = null;
+              page = null;
+              result = {
+                url: headlessUrl,
+                status: headlessStatus,
+                contentBlocked: true,
+                headedFallback: false,
+                warning: 'content_blocked',
+                contentBlockedReason: contentBlockResult.reason,
+                suggestion: 'Headed fallback failed: ' + fallbackErr.message,
+                ...(opts.waitLoaded && { waitLoaded: true }),
+                ...(headlessSnapshot != null && { snapshot: headlessSnapshot })
+              };
+              break;
             }
           }
         }
