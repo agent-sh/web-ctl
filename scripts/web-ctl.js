@@ -21,7 +21,7 @@ const BOOLEAN_FLAGS = new Set([
   '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
   '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
-  '--snapshot-full', '--no-auth-wall-detect', '--no-content-block-detect', '--ensure-auth', '--wait-loaded',
+  '--snapshot-full', '--no-auth-wall-detect', '--no-content-block-detect', '--no-auto-recover', '--ensure-auth', '--wait-loaded',
 ]);
 
 function validateSessionName(name) {
@@ -1096,6 +1096,39 @@ async function runAction(sessionName, action, actionArgs, opts) {
             contentBlockedIndicators: provider?.contentBlockedIndicators
           });
         }
+        // Auto headed fallback when content is blocked
+        if (contentBlockResult?.detected && !opts.noAutoRecover) {
+          const headed = await canLaunchHeaded();
+          if (headed) {
+            console.warn('[WARN] Content blocked in headless - falling back to headed browser');
+            await closeBrowser(sessionName, context);
+            await new Promise(resolve => setTimeout(resolve, 500));
+            const headedBrowser = await launchBrowser(sessionName, { headless: false });
+            context = headedBrowser.context;
+            page = headedBrowser.page;
+            try {
+              await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+              if (opts.waitLoaded) {
+                await waitForLoaded(page, { timeout: loadedTimeout });
+              }
+              const headedSnapshot = await getSnapshot(page, opts);
+              result = {
+                url: page.url(),
+                status: response ? response.status() : null,
+                contentBlocked: true,
+                headedFallback: true,
+                warning: 'content_blocked_headed_fallback',
+                suggestion: 'Content was blocked in headless mode. Retrieved via headed browser.',
+                ...(opts.waitLoaded && { waitLoaded: true }),
+                ...(headedSnapshot != null && { snapshot: headedSnapshot })
+              };
+              break;
+            } catch (fallbackErr) {
+              console.warn('[WARN] Headed fallback failed: ' + fallbackErr.message);
+              // Fall through to return the headless result with warning
+            }
+          }
+        }
         const snapshot = await getSnapshot(page, opts);
         result = {
           url: page.url(),
@@ -1103,9 +1136,12 @@ async function runAction(sessionName, action, actionArgs, opts) {
           ...(opts.waitLoaded && { waitLoaded: true }),
           ...(contentBlockResult?.detected && {
             contentBlocked: true,
+            headedFallback: false,
             warning: 'content_blocked',
             contentBlockedReason: contentBlockResult.reason,
-            suggestion: "Site may be blocking headless browsers. Try: (1) authenticate with 'session auth <name> --provider <provider>', (2) use --ensure-auth for headed mode"
+            suggestion: opts.noAutoRecover
+              ? "Site may be blocking headless browsers. Try: (1) authenticate with 'session auth <name> --provider <provider>', (2) use --ensure-auth for headed mode"
+              : 'Content blocked and no display for headed fallback. Try: ssh -X or set DISPLAY.'
           }),
           ...(snapshot != null && { snapshot })
         };
