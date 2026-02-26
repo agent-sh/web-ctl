@@ -760,6 +760,43 @@ describe('auth wall detection in goto', () => {
   });
 });
 
+describe('content blocking detection in goto', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const webCtlSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+    'utf8'
+  );
+
+  it('goto case imports detectContentBlocked', () => {
+    assert.ok(
+      webCtlSource.includes('detectContentBlocked'),
+      'goto case should import detectContentBlocked'
+    );
+  });
+
+  it('goto case checks noContentBlockDetect flag', () => {
+    assert.ok(
+      webCtlSource.includes('noContentBlockDetect'),
+      'goto case should check noContentBlockDetect flag'
+    );
+  });
+
+  it('goto case calls matchProviderByDomain', () => {
+    assert.ok(
+      webCtlSource.includes('matchProviderByDomain'),
+      'goto case should match provider by domain'
+    );
+  });
+
+  it('--no-content-block-detect is a valid boolean flag', () => {
+    assert.ok(
+      webCtlSource.includes("'--no-content-block-detect'"),
+      '--no-content-block-detect should be in BOOLEAN_FLAGS'
+    );
+  });
+});
+
 describe('--ensure-auth flag', () => {
   const fs = require('fs');
   const path = require('path');

@@ -304,3 +304,48 @@ describe('CONTENT_BLOCKED_TEXT_PATTERNS', () => {
     }
   });
 });
+
+describe('matchProviderByDomain', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const webCtlSource = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'web-ctl.js'),
+    'utf8'
+  );
+
+  it('matchProviderByDomain function exists in web-ctl.js', () => {
+    assert.ok(
+      webCtlSource.includes('function matchProviderByDomain(url)'),
+      'matchProviderByDomain function should be defined in web-ctl.js'
+    );
+  });
+
+  it('handles URL parsing with new URL', () => {
+    assert.ok(
+      webCtlSource.includes('new URL(url)'),
+      'matchProviderByDomain should parse URL using new URL()'
+    );
+  });
+
+  it('returns null for unmatched domains', () => {
+    assert.ok(
+      webCtlSource.includes('|| null'),
+      'matchProviderByDomain should return null for unmatched domains'
+    );
+  });
+
+  it('lazy-loads provider domain map', () => {
+    assert.ok(
+      webCtlSource.includes('_providerDomainMap'),
+      'matchProviderByDomain should use lazy-loaded provider domain map'
+    );
+    assert.ok(
+      webCtlSource.includes('if (!_providerDomainMap)'),
+      'matchProviderByDomain should check if domain map needs initialization'
+    );
+    assert.ok(
+      webCtlSource.includes('new Map()'),
+      'matchProviderByDomain should create a Map for caching'
+    );
+  });
+});
