@@ -4,7 +4,8 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   detectContentBlocked,
-  CONTENT_BLOCKED_TEXT_PATTERNS
+  CONTENT_BLOCKED_TEXT_PATTERNS,
+  LOADING_INDICATOR_SELECTORS
 } = require('../scripts/auth-wall-detect');
 
 // --- Mock helpers ---
@@ -202,6 +203,22 @@ describe('detectContentBlocked', () => {
     assert.equal(result.details.threshold, 200);
   });
 
+  it('skips content check when contentSelectors is empty array', async () => {
+    const page = mockPage({
+      bodyText: 'Normal page with plenty of content. ' + 'x'.repeat(600)
+    });
+    const result = await detectContentBlocked(page, {
+      contentSelectors: [],
+      contentBlockedIndicators: {
+        selectors: [],
+        textPatterns: [],
+        emptyContentThreshold: 200
+      }
+    });
+    assert.equal(result.detected, false);
+    assert.equal(result.reason, 'content_ok');
+  });
+
   it('does not flag content_empty when threshold is met', async () => {
     const page = mockPage({
       selectors: ['div.feed'],
@@ -301,6 +318,25 @@ describe('CONTENT_BLOCKED_TEXT_PATTERNS', () => {
     for (const pattern of CONTENT_BLOCKED_TEXT_PATTERNS) {
       assert.equal(typeof pattern, 'string');
       assert.equal(pattern, pattern.toLowerCase(), `Pattern "${pattern}" should be lowercase`);
+    }
+  });
+});
+
+describe('LOADING_INDICATOR_SELECTORS', () => {
+
+  it('is a non-empty array', () => {
+    assert.ok(Array.isArray(LOADING_INDICATOR_SELECTORS));
+    assert.ok(LOADING_INDICATOR_SELECTORS.length > 0);
+  });
+
+  it('contains expected selectors', () => {
+    assert.ok(LOADING_INDICATOR_SELECTORS.includes('[role="progressbar"]'));
+    assert.ok(LOADING_INDICATOR_SELECTORS.includes('[aria-busy="true"]'));
+  });
+
+  it('all entries are strings', () => {
+    for (const sel of LOADING_INDICATOR_SELECTORS) {
+      assert.equal(typeof sel, 'string');
     }
   });
 });

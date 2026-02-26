@@ -197,6 +197,14 @@ async function detectContentBlocked(page, options = {}) {
   const blockedTextPatterns = contentBlockedIndicators?.textPatterns || [];
   const emptyThreshold = contentBlockedIndicators?.emptyContentThreshold || DEFAULT_EMPTY_CONTENT_THRESHOLD;
 
+  // Fetch body text once, reuse in steps 2 and 4
+  let bodyText = null;
+  try {
+    bodyText = (await page.textContent('body') || '').slice(0, 5000).toLowerCase();
+  } catch {
+    // textContent failed - text-based checks will be skipped
+  }
+
   // 1. Provider-specific blocked selectors
   if (blockedSelectors.length > 0) {
     try {
@@ -218,19 +226,14 @@ async function detectContentBlocked(page, options = {}) {
   }
 
   // 2. Provider-specific blocked text patterns
-  if (blockedTextPatterns.length > 0) {
-    try {
-      const bodyText = (await page.textContent('body') || '').slice(0, 5000).toLowerCase();
-      const matched = blockedTextPatterns.find(pattern => bodyText.includes(pattern));
-      if (matched) {
-        return {
-          detected: true,
-          reason: 'provider_blocked_text',
-          details: { pattern: matched }
-        };
-      }
-    } catch {
-      // textContent failed - continue to next check
+  if (blockedTextPatterns.length > 0 && bodyText !== null) {
+    const matched = blockedTextPatterns.find(pattern => bodyText.includes(pattern));
+    if (matched) {
+      return {
+        detected: true,
+        reason: 'provider_blocked_text',
+        details: { pattern: matched }
+      };
     }
   }
 
@@ -269,8 +272,7 @@ async function detectContentBlocked(page, options = {}) {
   }
 
   // 4. Generic text patterns + short main content area
-  try {
-    const bodyText = (await page.textContent('body') || '').slice(0, 5000).toLowerCase();
+  if (bodyText !== null) {
     const genericMatch = CONTENT_BLOCKED_TEXT_PATTERNS.find(pattern => bodyText.includes(pattern));
     if (genericMatch && bodyText.length < 500) {
       return {
@@ -279,8 +281,6 @@ async function detectContentBlocked(page, options = {}) {
         details: { pattern: genericMatch, bodyLength: bodyText.length }
       };
     }
-  } catch {
-    // textContent failed - continue to next check
   }
 
   // 5. Persistent loading indicators (spinners still visible)
@@ -315,5 +315,6 @@ module.exports = {
   AUTH_URL_PATTERNS,
   AUTH_DOM_SELECTORS,
   AUTH_TEXT_PATTERNS,
-  CONTENT_BLOCKED_TEXT_PATTERNS
+  CONTENT_BLOCKED_TEXT_PATTERNS,
+  LOADING_INDICATOR_SELECTORS
 };
