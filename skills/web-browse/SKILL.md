@@ -46,7 +46,7 @@ Safe practice: always double-quote URL arguments.
 ### goto - Navigate to URL
 
 ```bash
-node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> [--no-auth-wall-detect] [--no-content-block-detect] [--ensure-auth] [--wait-loaded]
+node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> goto <url> [--no-auth-wall-detect] [--no-content-block-detect] [--no-auto-recover] [--ensure-auth] [--wait-loaded]
 ```
 
 Navigates to a URL and automatically detects authentication walls using a three-heuristic detection system:
@@ -62,9 +62,11 @@ Use `--ensure-auth` to actively poll for authentication completion instead of a 
 
 Use `--wait-loaded` to wait for async-rendered content to finish loading before taking the snapshot. This combines network idle, DOM stability, loading indicator absence detection (spinners, skeletons, progress bars, aria-busy), and a final DOM quiet period. Use `--timeout <ms>` to set the wait timeout (default: 15000ms). Ideal for SPAs and pages that render content after the initial page load.
 
-Use `--no-content-block-detect` to disable automatic detection of content blocking (e.g., sites serving empty pages to headless browsers). When content blocking is detected, the response includes `contentBlocked: true`, `warning: 'content_blocked'`, and a suggestion to authenticate or use headed mode.
+Use `--no-content-block-detect` to disable automatic detection of content blocking (e.g., sites serving empty pages to headless browsers). When content blocking is detected, the goto action automatically falls back to a headed browser to retrieve the content. The response includes `contentBlocked: true`, `headedFallback: true`, and the snapshot from the headed session.
 
-Returns: `{ url, status, authWallDetected, checkpointCompleted, ensureAuthCompleted, waitLoaded, contentBlocked, warning, contentBlockedReason, suggestion, snapshot }`
+Use `--no-auto-recover` to disable the automatic headed fallback. When set, content blocking detection still runs but only returns a warning without attempting recovery.
+
+Returns: `{ url, status, authWallDetected, checkpointCompleted, ensureAuthCompleted, waitLoaded, contentBlocked, headedFallback, warning, contentBlockedReason, suggestion, snapshot }`
 
 ### snapshot - Get Accessibility Tree
 
