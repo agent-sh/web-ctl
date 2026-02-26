@@ -53,8 +53,14 @@
     "captchaTextPatterns": ["verify it's you", "complete the challenge", "confirm your identity"],
     "twoFactorHint": "X may prompt for a TOTP code, SMS code, or security key. X may also ask you to confirm your username or phone number as an identity check before password.",
     "twoFactorSelectors": ["input[data-testid=\"ocfEnterTextTextInput\"]", "input[name=\"text\"][autocomplete=\"one-time-code\"]"],
+    "contentSelectors": ["[data-testid=\"primaryColumn\"]", "article[data-testid=\"tweet\"]", "[data-testid=\"cellInnerDiv\"]"],
+    "contentBlockedIndicators": {
+      "selectors": ["[data-testid=\"empty_state_header_text\"]", "[data-testid=\"error-detail\"]"],
+      "textPatterns": ["something went wrong", "try again", "content is not available", "this page is not available"],
+      "emptyContentThreshold": 200
+    },
     "flowType": "spa",
-    "notes": "Multi-step SPA flow: identifier -> optional username challenge -> password -> optional 2FA. URL does not change between steps. Arkose FunCAPTCHA triggers on nearly every new IP. Most aggressive anti-bot of any provider."
+    "notes": "Multi-step SPA flow: identifier -> optional username challenge -> password -> optional 2FA. URL does not change between steps. Arkose FunCAPTCHA triggers on nearly every new IP. Most aggressive anti-bot of any provider. X.com blocks headless browsers from viewing feed content - pages load but timelines appear empty or show error states. Authenticated sessions with real browser profiles work reliably."
   },
   {
     "slug": "reddit",
