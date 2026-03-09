@@ -1,0 +1,28 @@
+severity = "Warning"
+exclude = [
+    "node_modules/**",
+    ".git/**",
+    ".claude/worktrees/**",  # Worktree copies duplicate main repo findings
+]
+target = "ClaudeCode"
+tools = []
+locale = "en"
+
+[rules]
+
+disabled_rules = [
+    "PE-001",      # Auto-generated CLAUDE.md - rule placement controlled by agent-core template
+    "PE-005",      # "Be concise" is ecosystem-wide boilerplate from agent-core sync
+    "CC-MEM-005",  # Same as PE-005 for Claude-specific rules
+    "CC-MEM-006",  # Negative instructions (NEVER/Do not) are ecosystem standard critical rules
+    "CC-MEM-008",  # Duplicate of PE-001 for Claude memory files
+    "CC-SK-017",   # Intentional - version is a client-specific frontmatter field
+    "XP-003",      # Intentional - lib/cross-platform/RESEARCH.md documents all platform paths
+    "XML-001",     # False positive - <login-url> is a placeholder in examples, not unclosed XML
+    "CC-SK-012",   # Intentional - argument-hint present for UI display, args parsed from prompt context
+    "AS-012",      # Intentional - web-browse skill requires >500 lines for browser automation reference
+]
+
+[tool_versions]
+
+[spec_revisions]
