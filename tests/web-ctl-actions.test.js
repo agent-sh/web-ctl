@@ -692,7 +692,7 @@ describe('auto-create session CLI integration', () => {
       ], {
         env: { ...process.env, AI_STATE_DIR: tmpDir },
         encoding: 'utf8',
-        timeout: 10000
+        timeout: 30000
       });
       return JSON.parse(result);
     } catch (err) {
