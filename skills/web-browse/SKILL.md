@@ -135,10 +135,21 @@ Default timeout: 30000ms. Returns: `{ url, found, snapshot }`
 ### evaluate - Execute JavaScript
 
 ```bash
+WEB_CTL_ALLOW_EVALUATE=1 \
+WEB_CTL_EVALUATE_CONFIRM=<first-16-chars-of-sha256(code)> \
 node ${PLUGIN_ROOT}/scripts/web-ctl.js run <session> evaluate <js-code>
 ```
 
-Executes JavaScript in the page context. Result is wrapped in `[PAGE_CONTENT: ...]`. Returns: `{ url, result }`
+Executes JavaScript in the page context. Gated by:
+
+1. `WEB_CTL_ALLOW_EVALUATE=1` must be set in the environment, AND
+2. Interactive TTYs get a y/N prompt showing the exact code. Non-TTY
+   callers (agents, CI) must additionally set `WEB_CTL_EVALUATE_CONFIRM`
+   to the first 16 hex characters of `sha256(code)`. This hash-binding
+   prevents a prompt-injected string from being smuggled into the
+   evaluate call with a stale confirmation.
+
+Result is wrapped in `[PAGE_CONTENT: ...]`. Returns: `{ url, result }`
 
 ### screenshot - Take Screenshot
 

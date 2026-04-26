@@ -18,7 +18,7 @@ const SESSION_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const ALLOWED_SCHEMES = /^https?:\/\//i;
 
 const BOOLEAN_FLAGS = new Set([
-  '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
+  '--no-snapshot', '--wait-stable', '--vnc',
   '--bind-remote',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
   '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
@@ -34,6 +34,69 @@ function validateSessionName(name) {
 function validateUrl(url) {
   if (!url || !ALLOWED_SCHEMES.test(url)) {
     throw new Error(`Invalid URL scheme. Only http:// and https:// URLs are allowed. Got: ${url}`);
+  }
+}
+
+/**
+ * Gate for `evaluate` action. Executing arbitrary JS in a page with live
+ * cookies is a significant capability, so we require explicit opt-in via
+ * env var, plus either an interactive y/N on a TTY or a pre-computed hash
+ * confirmation for agent/non-TTY callers.
+ *
+ * Non-TTY flow: the caller must set WEB_CTL_EVALUATE_CONFIRM to the first
+ * 16 chars of sha256(code). This ensures the agent that chose the code is
+ * the same one that authorized it — prompt-injected strings cannot smuggle
+ * a valid hash without knowing the code.
+ */
+async function confirmEvaluate(code) {
+  if (process.env.WEB_CTL_ALLOW_EVALUATE !== '1') {
+    throw new Error(
+      'evaluate is disabled. Set WEB_CTL_ALLOW_EVALUATE=1 to enable. ' +
+      'This action executes arbitrary JS in the browser context.'
+    );
+  }
+
+  const crypto = require('crypto');
+  const expected = crypto.createHash('sha256').update(code).digest('hex').slice(0, 16);
+
+  if (process.stdin.isTTY) {
+    process.stderr.write(
+      '\n[web-ctl] About to evaluate JavaScript in the page:\n' +
+      '  ' + code.replace(/\n/g, '\n  ') + '\n' +
+      '[web-ctl] Continue? [y/N]: '
+    );
+    const answer = await new Promise((resolve) => {
+      let buf = '';
+      const onData = (chunk) => {
+        buf += chunk.toString('utf8');
+        if (buf.includes('\n')) {
+          process.stdin.removeListener('data', onData);
+          try { process.stdin.pause(); } catch { /* ignore */ }
+          resolve(buf.trim().toLowerCase());
+        }
+      };
+      try { process.stdin.resume(); } catch { /* ignore */ }
+      process.stdin.on('data', onData);
+    });
+    if (answer !== 'y' && answer !== 'yes') {
+      throw new Error('evaluate aborted by user.');
+    }
+    return;
+  }
+
+  const confirm = process.env.WEB_CTL_EVALUATE_CONFIRM;
+  if (!confirm) {
+    throw new Error(
+      'evaluate from non-TTY caller requires WEB_CTL_EVALUATE_CONFIRM to be set ' +
+      `to the first 16 hex chars of sha256(code). Expected: ${expected}`
+    );
+  }
+  if (confirm.toLowerCase() !== expected) {
+    throw new Error(
+      'WEB_CTL_EVALUATE_CONFIRM hash mismatch. The code does not match the ' +
+      'confirmation hash — refusing to run. This guard prevents prompt-injected ' +
+      'code from being executed with a stale or attacker-chosen confirmation.'
+    );
   }
 }
 
@@ -1274,7 +1337,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
         // WARNING: Only execute agent-authored code. NEVER pass web page content as code.
         const code = actionArgs.join(' ');
         if (!code) throw new Error('JS code required: run <session> evaluate <code>');
-        if (!opts.allowEvaluate) throw new Error('evaluate requires --allow-evaluate flag for safety. This action executes arbitrary JS in the browser context.');
+        await confirmEvaluate(code);
         const evalResult = await page.evaluate(code);
         const stringResult = typeof evalResult === 'string' ? evalResult : JSON.stringify(evalResult);
         result = { url: page.url(), result: sanitizeWebContent(stringResult || '') };

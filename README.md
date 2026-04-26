@@ -248,7 +248,7 @@ Browser switches to headed mode. Agent pauses, tells user to interact. Script po
 - **Read-only agent** - The web-browse agent has no Write/Edit tools
 - **Anti-bot measures** - `navigator.webdriver = false`, `--disable-blink-features=AutomationControlled`, random action delays (200-800ms)
 - **Path traversal prevention** - Screenshot paths validated within session directory
-- **JS execution gated** - `evaluate` action requires explicit `--allow-evaluate` flag
+- **JS execution gated** - `evaluate` action requires `WEB_CTL_ALLOW_EVALUATE=1` in the environment, plus either an interactive y/N confirmation (on a TTY) or `WEB_CTL_EVALUATE_CONFIRM=<first-16-hex-of-sha256(code)>` (non-TTY). The hash-binding forces the caller to commit to the exact code, which defeats prompt-injection attempts that try to smuggle different code past a stale confirmation.
 
 ## Cross-Platform
 
