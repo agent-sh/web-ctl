@@ -1,6 +1,27 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.0] - 2026-04-26
+
+### Security
+- VNC auth loopback-only + per-session random password token (was 0.0.0.0, -nopw)
+- `evaluate` requires env + TTY-or-hash gate (was bare `--allow-evaluate` flag)
+- SSRF denylist for 127.0.0.1, RFC1918, 169.254.169.254 (cloud metadata), link-local, IPv6 private ranges incl. IPv4-mapped hex form
+- `page.route` SSRF guard re-validates navigations (mitigates DNS rebinding)
+- VNC password file uses mkdtempSync 0700 + process-exit cleanup (was tmpdir + predictable name + post-hoc chmod)
+- Evaluate error no longer reveals expected sha256 hash
+- Auto-install is now opt-in via `WEB_CTL_AUTO_INSTALL=1`
+- Playwright pinned to exact 1.58.2 (was floor >=1.40.0)
+- Redaction patterns expanded: bare JWTs, AWS AKIA, ghp_/gho_/ghu_/ghs_, OpenAI/Anthropic keys
+- CI: actions/add-to-project pinned to v1.0.2 (v1 alias didn't exist, broke workflow)
+
+### Docs
+- Prompt-injection "defense" reframed as a convention, not a boundary
+- Removed false OS keychain fallback claim from README
+
+### Breaking
+- `--allow-evaluate` flag removed; use WEB_CTL_ALLOW_EVALUATE=1 + confirmation
+- ensure-deps no longer auto-runs `npm install` / `playwright install` - set WEB_CTL_AUTO_INSTALL=1
+- VNC no longer binds all interfaces by default - use `--bind-remote` to restore
 
 ### Added
 - Auto-install missing dependencies (playwright and Chromium) on first browser operation - eliminates manual setup step. Lockfile-based coordination prevents race conditions. Set `WEB_CTL_SKIP_AUTO_INSTALL=1` to disable in CI/sandboxed environments

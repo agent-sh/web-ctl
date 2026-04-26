@@ -1,6 +1,6 @@
 {
   "name": "@agentsys/web-ctl",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Browser automation and web testing toolkit for AI agents. Headless browser control, persistent sessions, auth handoff.",
   "bin": {
     "web-ctl": "scripts/web-ctl.js"
