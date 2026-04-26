@@ -19,6 +19,7 @@ const ALLOWED_SCHEMES = /^https?:\/\//i;
 
 const BOOLEAN_FLAGS = new Set([
   '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
+  '--bind-remote',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
   '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
   '--snapshot-full', '--no-auth-wall-detect', '--no-content-block-detect', '--no-auto-recover', '--ensure-auth', '--wait-loaded',
