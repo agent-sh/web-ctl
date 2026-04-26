@@ -80,14 +80,19 @@ function releaseLock() {
 }
 
 /**
- * Ensure playwright is available. Installs it automatically if missing.
+ * Ensure playwright is available. By default, auto-install is DISABLED:
+ * if playwright is missing we throw with manual install instructions.
+ *
+ * Set WEB_CTL_AUTO_INSTALL=1 to opt in to automatic installation (the
+ * legacy behavior). Running `npm install` and a browser download as a
+ * side-effect of a CLI invocation is surprising and risky, so we make
+ * the opt-in explicit.
+ *
+ * The legacy WEB_CTL_SKIP_AUTO_INSTALL env var is still honored for
+ * backward compat (it forces skip), but it is no longer required.
  *
  * This function is synchronous. It uses a module-level cache so repeated
  * calls within the same process are free after the first successful check.
- *
- * Set WEB_CTL_SKIP_AUTO_INSTALL=1 to disable auto-install (for CI/sandboxed
- * environments). When set, throws an error with manual install instructions
- * if playwright is missing.
  */
 function ensurePlaywright() {
   if (_playwrightVerified) return;
@@ -97,15 +102,18 @@ function ensurePlaywright() {
     _playwrightVerified = true;
     return;
   } catch {
-    // playwright not found - proceed to install
+    // playwright not found - decide whether to install
   }
 
-  if (process.env.WEB_CTL_SKIP_AUTO_INSTALL === '1') {
+  const autoInstallOptIn = process.env.WEB_CTL_AUTO_INSTALL === '1';
+  const legacySkip = process.env.WEB_CTL_SKIP_AUTO_INSTALL === '1';
+
+  if (!autoInstallOptIn || legacySkip) {
     throw new Error(
       `Required dependency 'playwright' is not installed.\n` +
-      `Auto-install is disabled (WEB_CTL_SKIP_AUTO_INSTALL=1).\n` +
-      `Run manually:\n` +
-      `  cd ${PLUGIN_ROOT} && npm install && npx playwright install chromium`
+      `Auto-install is opt-in. Either:\n` +
+      `  (a) run manually:  cd ${PLUGIN_ROOT} && npm install && npx playwright install chromium\n` +
+      `  (b) set WEB_CTL_AUTO_INSTALL=1 and re-invoke web-ctl to auto-install.`
     );
   }
 

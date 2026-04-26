@@ -35,9 +35,9 @@ Each invocation is a single Node.js process. No daemon, no MCP server, no IPC. S
 # Claude Code
 agentsys install web-ctl
 
-# Dependencies auto-install on first use
-# To disable auto-install (CI/sandboxed environments):
-# export WEB_CTL_SKIP_AUTO_INSTALL=1
+# Dependencies are NOT auto-installed by default. Either:
+#   (a) run:   cd $(npm root)/@agentsys/web-ctl && npm install && npx playwright install chromium
+#   (b) set:   export WEB_CTL_AUTO_INSTALL=1   (opt in to auto-install on first use)
 ```
 
 ## Commands
@@ -277,8 +277,7 @@ Can be invoked by:
 ## Requirements
 
 - Node.js 18+
-- Playwright and Chromium (auto-installed on first browser operation)
-- Set `WEB_CTL_SKIP_AUTO_INSTALL=1` to disable auto-install in CI/sandboxed environments
+- Playwright and Chromium (NOT auto-installed by default; run `npm install && npx playwright install chromium` in the plugin directory, or set `WEB_CTL_AUTO_INSTALL=1` to opt in to auto-install on first browser operation)
 
 ## License
 
