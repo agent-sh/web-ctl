@@ -35,9 +35,9 @@ Each invocation is a single Node.js process. No daemon, no MCP server, no IPC. S
 # Claude Code
 agentsys install web-ctl
 
-# Dependencies auto-install on first use
-# To disable auto-install (CI/sandboxed environments):
-# export WEB_CTL_SKIP_AUTO_INSTALL=1
+# Dependencies are NOT auto-installed by default. Either:
+#   (a) run:   cd $(npm root)/@agentsys/web-ctl && npm install && npx playwright install chromium
+#   (b) set:   export WEB_CTL_AUTO_INSTALL=1   (opt in to auto-install on first use)
 ```
 
 ## Commands
@@ -242,13 +242,13 @@ Browser switches to headed mode. Agent pauses, tells user to interact. Script po
 
 ## Security Model
 
-- **Prompt injection defense** - All web content wrapped in `[PAGE_CONTENT: ...]` delimiters; agent treats it as untrusted data
-- **Encryption at rest** - Session storage is AES-256-GCM encrypted (master key from OS keyring or HKDF fallback)
+- **Prompt injection convention** - All web content is wrapped in `[PAGE_CONTENT: ...]` delimiters. This is a *convention* the calling agent is expected to respect; it is **not** a structural isolation boundary. A sufficiently capable model will ignore the wrapper. Treat all page content as hostile input regardless of the wrapper. The wrapper exists to give conformant agents an easy lexical signal, not to constrain non-conformant ones.
+- **Encryption at rest** - Session storage is AES-256-GCM encrypted. The master key is derived via HKDF over a locally generated key file. (TODO: OS keyring integration is not yet implemented; the current code path is HKDF-only.)
 - **Output sanitization** - `redact.js` strips cookies, tokens, session IDs, auth headers, URL credentials from all stdout
 - **Read-only agent** - The web-browse agent has no Write/Edit tools
 - **Anti-bot measures** - `navigator.webdriver = false`, `--disable-blink-features=AutomationControlled`, random action delays (200-800ms)
 - **Path traversal prevention** - Screenshot paths validated within session directory
-- **JS execution gated** - `evaluate` action requires explicit `--allow-evaluate` flag
+- **JS execution gated** - `evaluate` action requires `WEB_CTL_ALLOW_EVALUATE=1` in the environment, plus either an interactive y/N confirmation (on a TTY) or `WEB_CTL_EVALUATE_CONFIRM=<first-16-hex-of-sha256(code)>` (non-TTY). The hash-binding forces the caller to commit to the exact code, which defeats prompt-injection attempts that try to smuggle different code past a stale confirmation.
 
 ## Cross-Platform
 
@@ -277,8 +277,8 @@ Can be invoked by:
 ## Requirements
 
 - Node.js 18+
-- Playwright and Chromium (auto-installed on first browser operation)
-- Set `WEB_CTL_SKIP_AUTO_INSTALL=1` to disable auto-install in CI/sandboxed environments
+- Playwright and Chromium (NOT auto-installed by default; run `npm install && npx playwright install chromium` in the plugin directory, or set `WEB_CTL_AUTO_INSTALL=1` to opt in to auto-install on first browser operation)
+- Playwright is pinned to an exact version (currently `1.58.2`) rather than a floating range. Updates land on the agentsys release cadence, not transitively — if you need a newer Playwright, open a PR bumping both `package.json` and `package-lock.json`.
 
 ## License
 

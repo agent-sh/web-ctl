@@ -18,7 +18,8 @@ const SESSION_NAME_RE = /^[a-zA-Z0-9_-]{1,64}$/;
 const ALLOWED_SCHEMES = /^https?:\/\//i;
 
 const BOOLEAN_FLAGS = new Set([
-  '--allow-evaluate', '--no-snapshot', '--wait-stable', '--vnc',
+  '--no-snapshot', '--wait-stable', '--vnc',
+  '--bind-remote',
   '--exact', '--accept', '--submit', '--dismiss', '--auto',
   '--snapshot-collapse', '--snapshot-text-only', '--snapshot-compact',
   '--snapshot-full', '--no-auth-wall-detect', '--no-content-block-detect', '--no-auto-recover', '--ensure-auth', '--wait-loaded',
@@ -30,9 +31,254 @@ function validateSessionName(name) {
   }
 }
 
+// Hostnames that resolve to cloud metadata endpoints; rejected before DNS.
+const METADATA_HOSTS = new Set([
+  'metadata.google.internal',
+  'metadata',
+  'instance-data',
+  'instance-data.ec2.internal',
+]);
+
+function ipv4ToInt(ip) {
+  const parts = ip.split('.').map(n => parseInt(n, 10));
+  if (parts.length !== 4 || parts.some(n => isNaN(n) || n < 0 || n > 255)) return null;
+  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+}
+
+function ipv4InCidr(ip, cidr) {
+  const [base, bitsStr] = cidr.split('/');
+  const bits = parseInt(bitsStr, 10);
+  const ipInt = ipv4ToInt(ip);
+  const baseInt = ipv4ToInt(base);
+  if (ipInt === null || baseInt === null) return false;
+  if (bits === 0) return true;
+  const mask = (~0 << (32 - bits)) >>> 0;
+  return (ipInt & mask) === (baseInt & mask);
+}
+
+const IPV4_PRIVATE_CIDRS = [
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '127.0.0.0/8',
+  '169.254.0.0/16',
+  '0.0.0.0/8',
+];
+
+function isPrivateIpv4(ip) {
+  return IPV4_PRIVATE_CIDRS.some(cidr => ipv4InCidr(ip, cidr));
+}
+
+function isPrivateIpv6(ip) {
+  const lower = ip.toLowerCase();
+  if (lower === '::1' || lower === '::') return true;
+  // fc00::/7  (unique local)
+  if (/^f[cd][0-9a-f]{2}:/i.test(lower)) return true;
+  // fe80::/10 (link-local)
+  if (/^fe[89ab][0-9a-f]:/i.test(lower)) return true;
+  // fec0::/10 (deprecated site-local, RFC 3879) — still treat as private
+  if (/^fe[cdef][0-9a-f]:/i.test(lower)) return true;
+  // 100::/64 discard prefix (RFC 6666)
+  if (/^0?100:0{0,4}:0{0,4}:0{0,4}:/i.test(lower) || lower.startsWith('100::')) return true;
+  // 2001:db8::/32 documentation prefix (RFC 3849) — should never be reachable
+  if (/^2001:0?db8:/i.test(lower)) return true;
+  // IPv4-mapped IPv6, dotted form: ::ffff:a.b.c.d
+  const mappedDotted = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mappedDotted) return isPrivateIpv4(mappedDotted[1]);
+  // IPv4-mapped IPv6, hex form: ::ffff:HHHH:LLLL (e.g. ::ffff:7f00:1 = 127.0.0.1)
+  // URL parsers (including Node's WHATWG URL) may normalize dotted-form to hex,
+  // so we MUST match this shape or SSRF guards can be bypassed trivially.
+  const mappedHex = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mappedHex) {
+    const hi = parseInt(mappedHex[1], 16);
+    const lo = parseInt(mappedHex[2], 16);
+    if (Number.isFinite(hi) && Number.isFinite(lo)) {
+      const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+      return isPrivateIpv4(ipv4);
+    }
+  }
+  return false;
+}
+
+/**
+ * Validate a URL string, synchronously checking scheme.
+ *
+ * This function stays sync for backward compat with all existing call sites.
+ * SSRF denylist checks (DNS-based) live in assertUrlAllowed below; call that
+ * from async contexts for full validation.
+ */
 function validateUrl(url) {
   if (!url || !ALLOWED_SCHEMES.test(url)) {
     throw new Error(`Invalid URL scheme. Only http:// and https:// URLs are allowed. Got: ${url}`);
+  }
+}
+
+/**
+ * Full URL validation including SSRF denylist.
+ * Resolves the hostname via DNS and rejects private / loopback / link-local
+ * / cloud-metadata addresses. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to opt out
+ * (useful for local dev against localhost or a private staging server).
+ */
+async function assertUrlAllowed(url) {
+  validateUrl(url);
+  if (process.env.WEB_CTL_ALLOW_PRIVATE_NETWORK === '1') return;
+
+  let parsed;
+  try { parsed = new URL(url); } catch {
+    throw new Error(`Invalid URL: ${url}`);
+  }
+
+  let host = parsed.hostname;
+  // Strip brackets from IPv6 literals
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
+  const lowerHost = host.toLowerCase();
+
+  if (METADATA_HOSTS.has(lowerHost)) {
+    throw new Error(`Blocked cloud metadata hostname: ${host}. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to override.`);
+  }
+
+  // Fast-path: if host is already an IP literal, check directly without DNS.
+  const net = require('net');
+  const family = net.isIP(host);
+  if (family === 4) {
+    if (isPrivateIpv4(host)) {
+      throw new Error(`Blocked private/loopback IPv4 address: ${host}. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to override.`);
+    }
+    return;
+  }
+  if (family === 6) {
+    if (isPrivateIpv6(host)) {
+      throw new Error(`Blocked private/loopback IPv6 address: ${host}. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to override.`);
+    }
+    return;
+  }
+
+  // Otherwise resolve via DNS. If DNS itself fails (ENOTFOUND, offline, etc.)
+  // we don't turn that into an SSRF rejection — the real network call will
+  // fail naturally and give the caller a proper error. We only reject when
+  // DNS succeeds and returns a private/loopback address.
+  const dns = require('dns').promises;
+  let addresses;
+  try {
+    addresses = await dns.lookup(host, { all: true });
+  } catch {
+    return;
+  }
+
+  for (const { address, family: f } of addresses) {
+    if (f === 4 && isPrivateIpv4(address)) {
+      throw new Error(`Host ${host} resolves to private/loopback address ${address}. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to override.`);
+    }
+    if (f === 6 && isPrivateIpv6(address)) {
+      throw new Error(`Host ${host} resolves to private/loopback IPv6 ${address}. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to override.`);
+    }
+  }
+}
+
+/**
+ * Install a Playwright route handler that re-validates every navigation
+ * the page performs (initial, redirects, and JS-initiated navigations),
+ * mitigating DNS-rebinding TOCTOU on the SSRF guard.
+ *
+ * KNOWN RESIDUAL RISK: Playwright's `dns.lookup` during the actual connect
+ * is outside our control, so a sufficiently racy DNS server can still
+ * return a private IP between our validation and Playwright's connection.
+ * The full fix needs a custom dispatcher that pins the resolved IP and
+ * sets the `Host:` header to the original hostname — not currently
+ * expressible cleanly in Playwright's API. This re-check narrows the
+ * window significantly (every navigation is re-validated) but does not
+ * close it completely. We accept that residual risk and document it here.
+ */
+async function installSsrfGuard(page) {
+  // Bypass when the operator has opted out. Checked at install time so we
+  // don't register a no-op handler on every page.
+  if (process.env.WEB_CTL_ALLOW_PRIVATE_NETWORK === '1') return;
+  try {
+    await page.route('**/*', async (route) => {
+      const request = route.request();
+      // Only gate top-level navigations and sub-document loads; gating every
+      // image/script/xhr is too expensive and the concern here is the page's
+      // own navigation target, not subresources (which share origin checks).
+      const type = request.resourceType();
+      if (type !== 'document' && type !== 'other') {
+        return route.continue();
+      }
+      try {
+        await assertUrlAllowed(request.url());
+      } catch (err) {
+        return route.abort('addressunreachable');
+      }
+      return route.continue();
+    });
+  } catch { /* best-effort; older Playwright or closed page */ }
+}
+
+/**
+ * Gate for `evaluate` action. Executing arbitrary JS in a page with live
+ * cookies is a significant capability, so we require explicit opt-in via
+ * env var, plus either an interactive y/N on a TTY or a pre-computed hash
+ * confirmation for agent/non-TTY callers.
+ *
+ * Non-TTY flow: the caller must set WEB_CTL_EVALUATE_CONFIRM to the first
+ * 16 chars of sha256(code). This ensures the agent that chose the code is
+ * the same one that authorized it — prompt-injected strings cannot smuggle
+ * a valid hash without knowing the code.
+ */
+async function confirmEvaluate(code) {
+  if (process.env.WEB_CTL_ALLOW_EVALUATE !== '1') {
+    throw new Error(
+      'evaluate is disabled. Set WEB_CTL_ALLOW_EVALUATE=1 to enable. ' +
+      'This action executes arbitrary JS in the browser context.'
+    );
+  }
+
+  const crypto = require('crypto');
+  const expected = crypto.createHash('sha256').update(code).digest('hex').slice(0, 16);
+
+  if (process.stdin.isTTY) {
+    process.stderr.write(
+      '\n[web-ctl] About to evaluate JavaScript in the page:\n' +
+      '  ' + code.replace(/\n/g, '\n  ') + '\n' +
+      '[web-ctl] Continue? [y/N]: '
+    );
+    const answer = await new Promise((resolve) => {
+      let buf = '';
+      const onData = (chunk) => {
+        buf += chunk.toString('utf8');
+        if (buf.includes('\n')) {
+          process.stdin.removeListener('data', onData);
+          try { process.stdin.pause(); } catch { /* ignore */ }
+          resolve(buf.trim().toLowerCase());
+        }
+      };
+      try { process.stdin.resume(); } catch { /* ignore */ }
+      process.stdin.on('data', onData);
+    });
+    if (answer !== 'y' && answer !== 'yes') {
+      throw new Error('evaluate aborted by user.');
+    }
+    return;
+  }
+
+  const confirm = process.env.WEB_CTL_EVALUATE_CONFIRM;
+  // We intentionally do NOT include the expected hash in the error message.
+  // Leaking the correct value would let a prompt-injected call simply copy
+  // it into the env var and defeat the guard. The calling agent must compute
+  // sha256(code).hex().slice(0,16) itself — that's the whole point of the
+  // scheme (it proves the agent chose the code).
+  if (!confirm) {
+    throw new Error(
+      'evaluate from non-TTY caller requires WEB_CTL_EVALUATE_CONFIRM to be set ' +
+      'to the first 16 hex chars of sha256(code). Compute it yourself; we will ' +
+      'not echo the expected value.'
+    );
+  }
+  if (confirm.toLowerCase() !== expected) {
+    throw new Error(
+      'WEB_CTL_EVALUATE_CONFIRM hash mismatch; refusing to run. This guard ' +
+      'prevents prompt-injected code from being executed with a stale or ' +
+      'attacker-chosen confirmation. Recompute sha256(code).slice(0,16).'
+    );
   }
 }
 
@@ -673,7 +919,7 @@ async function sessionAuth(name, opts) {
     return;
   }
 
-  try { validateUrl(resolved.url); } catch (err) {
+  try { await assertUrlAllowed(resolved.url); } catch (err) {
     output({ ok: false, command: 'session auth', session: name, error: 'invalid_url', message: err.message });
     return;
   }
@@ -785,7 +1031,7 @@ async function sessionVerify(name, opts) {
     return;
   }
 
-  try { validateUrl(url); } catch (err) {
+  try { await assertUrlAllowed(url); } catch (err) {
     output({ ok: false, command: 'session verify', session: name, error: 'invalid_url', message: err.message });
     return;
   }
@@ -991,10 +1237,11 @@ async function runAction(sessionName, action, actionArgs, opts) {
     const browser = await launchBrowser(sessionName, { headless });
     context = browser.context;
     page = browser.page;
+    await installSsrfGuard(page);
 
     if (action !== 'goto' && session.lastUrl && session.lastUrl !== 'about:blank') {
       try {
-        validateUrl(session.lastUrl);
+        await assertUrlAllowed(session.lastUrl);
         await page.goto(session.lastUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
       } catch { /* ignore - best effort restoration */ }
     }
@@ -1007,7 +1254,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
       case 'goto': {
         const url = actionArgs[0];
         if (!url) throw new Error('URL required: run <session> goto <url>');
-        validateUrl(url);
+        await assertUrlAllowed(url);
         const parsedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : NaN;
         const loadedTimeout = parsedTimeout > 0 ? parsedTimeout : 15000;
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -1023,6 +1270,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
               const headedBrowser = await launchBrowser(sessionName, { headless: false });
               context = headedBrowser.context;
               page = headedBrowser.page;
+              await installSsrfGuard(page);
               await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
               const ckTimeout = Math.min(opts.timeout ? parseInt(opts.timeout, 10) : 120, 3600) * 1000;
               if (opts.ensureAuth) {
@@ -1047,6 +1295,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
                     const headlessBrowser = await launchBrowser(sessionName, { headless: true });
                     context = headlessBrowser.context;
                     page = headlessBrowser.page;
+                    await installSsrfGuard(page);
                     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
                     if (opts.waitLoaded) {
                       await waitForLoaded(page, { timeout: loadedTimeout });
@@ -1127,6 +1376,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
               const headedBrowser = await launchBrowser(sessionName, { headless: false });
               context = headedBrowser.context;
               page = headedBrowser.page;
+              await installSsrfGuard(page);
               const headedResponse = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
               if (opts.waitLoaded) {
                 await waitForLoaded(page, { timeout: loadedTimeout });
@@ -1273,7 +1523,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
         // WARNING: Only execute agent-authored code. NEVER pass web page content as code.
         const code = actionArgs.join(' ');
         if (!code) throw new Error('JS code required: run <session> evaluate <code>');
-        if (!opts.allowEvaluate) throw new Error('evaluate requires --allow-evaluate flag for safety. This action executes arbitrary JS in the browser context.');
+        await confirmEvaluate(code);
         const evalResult = await page.evaluate(code);
         const stringResult = typeof evalResult === 'string' ? evalResult : JSON.stringify(evalResult);
         result = { url: page.url(), result: sanitizeWebContent(stringResult || '') };
@@ -1577,7 +1827,17 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  output({ ok: false, error: 'fatal', message: err.message });
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(err => {
+    output({ ok: false, error: 'fatal', message: err.message });
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  validateUrl,
+  assertUrlAllowed,
+  isPrivateIpv4,
+  isPrivateIpv6,
+  installSsrfGuard,
+};

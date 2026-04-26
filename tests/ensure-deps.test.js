@@ -43,6 +43,7 @@ function runWithMissingPlaywright(code, env = {}) {
 afterEach(() => {
   try { fs.unlinkSync(LOCKFILE); } catch { /* no lockfile */ }
   delete process.env.WEB_CTL_SKIP_AUTO_INSTALL;
+  delete process.env.WEB_CTL_AUTO_INSTALL;
 });
 
 describe('ensurePlaywright - when playwright is available', () => {
@@ -81,9 +82,29 @@ describe('ensurePlaywright - when playwright is available', () => {
 });
 
 describe('ensurePlaywright - when playwright is missing', () => {
-  it('throws with install instructions when WEB_CTL_SKIP_AUTO_INSTALL=1', () => {
+  it('throws by default (auto-install is opt-in)', () => {
+    const code = `
+      // Neither WEB_CTL_AUTO_INSTALL nor WEB_CTL_SKIP_AUTO_INSTALL is set.
+      const { ensurePlaywright } = require('./scripts/ensure-deps');
+      try {
+        ensurePlaywright();
+        process.stdout.write('NO_THROW');
+      } catch (err) {
+        process.stdout.write(err.message);
+      }
+    `;
+    const output = runWithMissingPlaywright(code);
+    assert.notEqual(output, 'NO_THROW', 'Should have thrown without opt-in');
+    assert.ok(output.includes('playwright'), 'Should mention playwright');
+    assert.ok(output.includes('WEB_CTL_AUTO_INSTALL'), 'Should mention opt-in env var');
+    assert.ok(output.includes('npm install'), 'Should include npm install command');
+    assert.ok(output.includes('npx playwright install chromium'), 'Should include browser install');
+  });
+
+  it('throws with install instructions when WEB_CTL_SKIP_AUTO_INSTALL=1 forces skip', () => {
     const code = `
       process.env.WEB_CTL_SKIP_AUTO_INSTALL = '1';
+      process.env.WEB_CTL_AUTO_INSTALL = '1';  // even with opt-in, skip wins
       const { ensurePlaywright } = require('./scripts/ensure-deps');
       try {
         ensurePlaywright();
@@ -95,14 +116,10 @@ describe('ensurePlaywright - when playwright is missing', () => {
     const output = runWithMissingPlaywright(code);
     assert.notEqual(output, 'NO_THROW', 'Should have thrown');
     assert.ok(output.includes('playwright'), 'Should mention playwright');
-    assert.ok(output.includes('WEB_CTL_SKIP_AUTO_INSTALL'), 'Should mention env var');
-    assert.ok(output.includes('npm install'), 'Should include npm install command');
-    assert.ok(output.includes('npx playwright install chromium'), 'Should include browser install');
   });
 
   it('error message includes the plugin directory path', () => {
     const code = `
-      process.env.WEB_CTL_SKIP_AUTO_INSTALL = '1';
       const { ensurePlaywright } = require('./scripts/ensure-deps');
       try {
         ensurePlaywright();
@@ -114,9 +131,8 @@ describe('ensurePlaywright - when playwright is missing', () => {
     assert.ok(output.includes('cd '), 'Should include cd command with plugin dir');
   });
 
-  it('error includes Run manually instructions', () => {
+  it('error includes run-manually guidance', () => {
     const code = `
-      process.env.WEB_CTL_SKIP_AUTO_INSTALL = '1';
       const { ensurePlaywright } = require('./scripts/ensure-deps');
       try {
         ensurePlaywright();
@@ -125,7 +141,7 @@ describe('ensurePlaywright - when playwright is missing', () => {
       }
     `;
     const output = runWithMissingPlaywright(code);
-    assert.ok(output.includes('Run manually'), 'Should include run manually guidance');
+    assert.ok(output.includes('run manually'), 'Should include run manually guidance');
   });
 });
 
@@ -166,6 +182,7 @@ describe('ensurePlaywright - install failure handling', () => {
   it('reports npm install failure with manual instructions', () => {
     // Mock both require.resolve (missing playwright) and execSync (npm fails)
     const code = `
+      process.env.WEB_CTL_AUTO_INSTALL = '1';
       const cp = require('child_process');
       const origExec = cp.execSync;
       cp.execSync = function(cmd, opts) {
@@ -191,6 +208,7 @@ describe('ensurePlaywright - install failure handling', () => {
   it('reports chromium install failure with manual instructions', () => {
     // npm install succeeds but playwright install chromium fails
     const code = `
+      process.env.WEB_CTL_AUTO_INSTALL = '1';
       const cp = require('child_process');
       const origExec = cp.execSync;
       cp.execSync = function(cmd, opts) {
@@ -215,6 +233,7 @@ describe('ensurePlaywright - install failure handling', () => {
 
   it('cleans up lockfile after install failure', () => {
     const code = `
+      process.env.WEB_CTL_AUTO_INSTALL = '1';
       const cp = require('child_process');
       const origExec = cp.execSync;
       cp.execSync = function(cmd, opts) {
@@ -237,6 +256,7 @@ describe('stale lock detection', () => {
   it('cleans up lockfile with non-existent PID', () => {
     // Use a subprocess to test stale lock detection
     const code = `
+      process.env.WEB_CTL_AUTO_INSTALL = '1';
       const fs = require('fs');
       const path = require('path');
       const lockfile = path.join(__dirname, '.deps-installing');

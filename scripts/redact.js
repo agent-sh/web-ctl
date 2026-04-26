@@ -72,6 +72,22 @@ function redactSecrets(text) {
   // matching ports (host:443/path) or spanning across lines/URLs.
   result = result.replace(/:\/\/([^/:@\s]+):([^/@\s]{4,})@/g, '://[REDACTED]:[REDACTED]@');
 
+  // Bare-token patterns. These match secrets that appear without a key=
+  // prefix (e.g. a JWT pasted into logs, an AWS key in a stack trace).
+  // Order matters: Anthropic keys start with `sk-ant-` so they must be
+  // matched before the generic `sk-` OpenAI pattern.
+  result = result.replace(/\bsk-ant-[A-Za-z0-9_-]{50,}\b/g, '[REDACTED]');
+  result = result.replace(/\bsk-[A-Za-z0-9]{20,}\b/g, '[REDACTED]');
+  result = result.replace(/\bAKIA[0-9A-Z]{16}\b/g, '[REDACTED]');
+  result = result.replace(/\bASIA[0-9A-Z]{16}\b/g, '[REDACTED]');
+  result = result.replace(/\bghp_[A-Za-z0-9]{36}\b/g, '[REDACTED]');
+  result = result.replace(/\bgho_[A-Za-z0-9]{36}\b/g, '[REDACTED]');
+  result = result.replace(/\bghs_[A-Za-z0-9]{36}\b/g, '[REDACTED]');
+  result = result.replace(/\bghu_[A-Za-z0-9]{36}\b/g, '[REDACTED]');
+  result = result.replace(/\bglpat-[A-Za-z0-9_-]{20}\b/g, '[REDACTED]');
+  // JWT: three base64url segments separated by dots, header starts with eyJ
+  result = result.replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '[REDACTED]');
+
   return result;
 }
 
