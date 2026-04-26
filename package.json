@@ -10,7 +10,7 @@
     "validate": "node scripts/validate.js"
   },
   "dependencies": {
-    "playwright": ">=1.40.0"
+    "playwright": "1.58.2"
   },
   "author": {
     "name": "Avi Fenesh",

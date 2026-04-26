@@ -278,6 +278,7 @@ Can be invoked by:
 
 - Node.js 18+
 - Playwright and Chromium (NOT auto-installed by default; run `npm install && npx playwright install chromium` in the plugin directory, or set `WEB_CTL_AUTO_INSTALL=1` to opt in to auto-install on first browser operation)
+- Playwright is pinned to an exact version (currently `1.58.2`) rather than a floating range. Updates land on the agentsys release cadence, not transitively — if you need a newer Playwright, open a PR bumping both `package.json` and `package-lock.json`.
 
 ## License
 
