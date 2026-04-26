@@ -76,9 +76,27 @@ function isPrivateIpv6(ip) {
   if (/^f[cd][0-9a-f]{2}:/i.test(lower)) return true;
   // fe80::/10 (link-local)
   if (/^fe[89ab][0-9a-f]:/i.test(lower)) return true;
-  // IPv4-mapped IPv6: ::ffff:a.b.c.d — check mapped v4
-  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-  if (mapped) return isPrivateIpv4(mapped[1]);
+  // fec0::/10 (deprecated site-local, RFC 3879) — still treat as private
+  if (/^fe[cdef][0-9a-f]:/i.test(lower)) return true;
+  // 100::/64 discard prefix (RFC 6666)
+  if (/^0?100:0{0,4}:0{0,4}:0{0,4}:/i.test(lower) || lower.startsWith('100::')) return true;
+  // 2001:db8::/32 documentation prefix (RFC 3849) — should never be reachable
+  if (/^2001:0?db8:/i.test(lower)) return true;
+  // IPv4-mapped IPv6, dotted form: ::ffff:a.b.c.d
+  const mappedDotted = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mappedDotted) return isPrivateIpv4(mappedDotted[1]);
+  // IPv4-mapped IPv6, hex form: ::ffff:HHHH:LLLL (e.g. ::ffff:7f00:1 = 127.0.0.1)
+  // URL parsers (including Node's WHATWG URL) may normalize dotted-form to hex,
+  // so we MUST match this shape or SSRF guards can be bypassed trivially.
+  const mappedHex = lower.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/);
+  if (mappedHex) {
+    const hi = parseInt(mappedHex[1], 16);
+    const lo = parseInt(mappedHex[2], 16);
+    if (Number.isFinite(hi) && Number.isFinite(lo)) {
+      const ipv4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
+      return isPrivateIpv4(ipv4);
+    }
+  }
   return false;
 }
 
@@ -158,6 +176,44 @@ async function assertUrlAllowed(url) {
 }
 
 /**
+ * Install a Playwright route handler that re-validates every navigation
+ * the page performs (initial, redirects, and JS-initiated navigations),
+ * mitigating DNS-rebinding TOCTOU on the SSRF guard.
+ *
+ * KNOWN RESIDUAL RISK: Playwright's `dns.lookup` during the actual connect
+ * is outside our control, so a sufficiently racy DNS server can still
+ * return a private IP between our validation and Playwright's connection.
+ * The full fix needs a custom dispatcher that pins the resolved IP and
+ * sets the `Host:` header to the original hostname — not currently
+ * expressible cleanly in Playwright's API. This re-check narrows the
+ * window significantly (every navigation is re-validated) but does not
+ * close it completely. We accept that residual risk and document it here.
+ */
+async function installSsrfGuard(page) {
+  // Bypass when the operator has opted out. Checked at install time so we
+  // don't register a no-op handler on every page.
+  if (process.env.WEB_CTL_ALLOW_PRIVATE_NETWORK === '1') return;
+  try {
+    await page.route('**/*', async (route) => {
+      const request = route.request();
+      // Only gate top-level navigations and sub-document loads; gating every
+      // image/script/xhr is too expensive and the concern here is the page's
+      // own navigation target, not subresources (which share origin checks).
+      const type = request.resourceType();
+      if (type !== 'document' && type !== 'other') {
+        return route.continue();
+      }
+      try {
+        await assertUrlAllowed(request.url());
+      } catch (err) {
+        return route.abort('addressunreachable');
+      }
+      return route.continue();
+    });
+  } catch { /* best-effort; older Playwright or closed page */ }
+}
+
+/**
  * Gate for `evaluate` action. Executing arbitrary JS in a page with live
  * cookies is a significant capability, so we require explicit opt-in via
  * env var, plus either an interactive y/N on a TTY or a pre-computed hash
@@ -205,17 +261,23 @@ async function confirmEvaluate(code) {
   }
 
   const confirm = process.env.WEB_CTL_EVALUATE_CONFIRM;
+  // We intentionally do NOT include the expected hash in the error message.
+  // Leaking the correct value would let a prompt-injected call simply copy
+  // it into the env var and defeat the guard. The calling agent must compute
+  // sha256(code).hex().slice(0,16) itself — that's the whole point of the
+  // scheme (it proves the agent chose the code).
   if (!confirm) {
     throw new Error(
       'evaluate from non-TTY caller requires WEB_CTL_EVALUATE_CONFIRM to be set ' +
-      `to the first 16 hex chars of sha256(code). Expected: ${expected}`
+      'to the first 16 hex chars of sha256(code). Compute it yourself; we will ' +
+      'not echo the expected value.'
     );
   }
   if (confirm.toLowerCase() !== expected) {
     throw new Error(
-      'WEB_CTL_EVALUATE_CONFIRM hash mismatch. The code does not match the ' +
-      'confirmation hash — refusing to run. This guard prevents prompt-injected ' +
-      'code from being executed with a stale or attacker-chosen confirmation.'
+      'WEB_CTL_EVALUATE_CONFIRM hash mismatch; refusing to run. This guard ' +
+      'prevents prompt-injected code from being executed with a stale or ' +
+      'attacker-chosen confirmation. Recompute sha256(code).slice(0,16).'
     );
   }
 }
@@ -1175,6 +1237,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
     const browser = await launchBrowser(sessionName, { headless });
     context = browser.context;
     page = browser.page;
+    await installSsrfGuard(page);
 
     if (action !== 'goto' && session.lastUrl && session.lastUrl !== 'about:blank') {
       try {
@@ -1207,6 +1270,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
               const headedBrowser = await launchBrowser(sessionName, { headless: false });
               context = headedBrowser.context;
               page = headedBrowser.page;
+              await installSsrfGuard(page);
               await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
               const ckTimeout = Math.min(opts.timeout ? parseInt(opts.timeout, 10) : 120, 3600) * 1000;
               if (opts.ensureAuth) {
@@ -1231,6 +1295,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
                     const headlessBrowser = await launchBrowser(sessionName, { headless: true });
                     context = headlessBrowser.context;
                     page = headlessBrowser.page;
+                    await installSsrfGuard(page);
                     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
                     if (opts.waitLoaded) {
                       await waitForLoaded(page, { timeout: loadedTimeout });
@@ -1311,6 +1376,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
               const headedBrowser = await launchBrowser(sessionName, { headless: false });
               context = headedBrowser.context;
               page = headedBrowser.page;
+              await installSsrfGuard(page);
               const headedResponse = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
               if (opts.waitLoaded) {
                 await waitForLoaded(page, { timeout: loadedTimeout });
@@ -1773,4 +1839,5 @@ module.exports = {
   assertUrlAllowed,
   isPrivateIpv4,
   isPrivateIpv6,
+  installSsrfGuard,
 };

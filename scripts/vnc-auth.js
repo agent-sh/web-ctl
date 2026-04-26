@@ -76,29 +76,63 @@ function getHostname(bindRemote = false) {
 }
 
 /**
+ * Generate an 8-character alphanumeric VNC password token.
+ *
+ * WHY 8 CHARS: the RFB protocol (used by x11vnc's `-rfbauth`) truncates
+ * passwords to 8 bytes via DES encryption. Generating anything longer is
+ * actively misleading — users copy the full string but only the first 8
+ * chars are verified. We restrict the alphabet to characters that survive
+ * RFB framing cleanly (no `+/=` padding from base64). 8 chars from a
+ * 62-char alphabet gives ~47.6 bits of entropy, which is the practical
+ * ceiling for this protocol — not our choice to make it higher.
+ */
+function generateVncToken() {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const bytes = crypto.randomBytes(8);
+  let out = '';
+  for (let i = 0; i < 8; i++) {
+    out += alphabet[bytes[i] % alphabet.length];
+  }
+  return out;
+}
+
+/**
  * Generate a random VNC password token and write it to a 0600 tempfile
- * using x11vnc's `-storepasswd` helper. Returns { token, passwdFile }.
+ * using x11vnc's `-storepasswd` helper. Returns { token, passwdFile, passwdDir }.
  * Caller MUST call cleanupPasswdFile() on exit.
+ *
+ * TOCTOU: the passwd file is created inside a private 0700 directory via
+ * `fs.mkdtempSync` so that even the brief window before x11vnc writes +
+ * chmods the passwd file is not reachable by other local users. We also
+ * remove the entire directory on cleanup.
  */
 function createVncPasswd() {
-  const token = crypto.randomBytes(24).toString('base64url');
-  const passwdFile = path.join(os.tmpdir(), `web-ctl-vnc-${process.pid}-${Date.now()}.passwd`);
+  const token = generateVncToken();
+  const passwdDir = fs.mkdtempSync(path.join(os.tmpdir(), 'web-ctl-vnc-'));
+  // mkdtempSync creates with 0700 on POSIX; belt-and-braces on platforms
+  // that may honor umask instead.
+  try { fs.chmodSync(passwdDir, 0o700); } catch { /* best-effort */ }
+  const passwdFile = path.join(passwdDir, 'passwd');
   // x11vnc -storepasswd <pass> <file> writes an obfuscated passwd file.
   execFileSync('x11vnc', ['-storepasswd', token, passwdFile], { stdio: 'ignore' });
   try { fs.chmodSync(passwdFile, 0o600); } catch { /* best-effort */ }
-  return { token, passwdFile };
+  return { token, passwdFile, passwdDir };
 }
 
-function cleanupPasswdFile(passwdFile) {
-  if (!passwdFile) return;
-  try { fs.unlinkSync(passwdFile); } catch { /* already gone */ }
+function cleanupPasswdFile(passwdFile, passwdDir) {
+  if (passwdFile) {
+    try { fs.unlinkSync(passwdFile); } catch { /* already gone */ }
+  }
+  if (passwdDir) {
+    try { fs.rmSync(passwdDir, { recursive: true, force: true }); } catch { /* already gone */ }
+  }
 }
 
 /**
  * Clean up all spawned processes and session state.
  */
-async function cleanup(sessionName, context, procs, { authenticated = false, passwdFile = null } = {}) {
-  cleanupPasswdFile(passwdFile);
+async function cleanup(sessionName, context, procs, { authenticated = false, passwdFile = null, passwdDir = null } = {}) {
+  cleanupPasswdFile(passwdFile, passwdDir);
   if (context) {
     try { await closeBrowser(sessionName, context); } catch { /* ignore */ }
   }
@@ -132,7 +166,16 @@ async function runVncAuth(sessionName, url, options = {}) {
   let websockifyProc = null;
   let context = null;
   let passwdFile = null;
+  let passwdDir = null;
   const bindRemote = !!options.bindRemote;
+  // Safety net: remove the passwd dir if the process exits unexpectedly
+  // (SIGINT, uncaught throw, etc.) without walking the normal cleanup path.
+  const exitHandler = () => {
+    if (passwdFile || passwdDir) {
+      try { cleanupPasswdFile(passwdFile, passwdDir); } catch { /* ignore */ }
+    }
+  };
+  process.once('exit', exitHandler);
 
   try {
     sessionStore.lockSession(sessionName);
@@ -147,8 +190,9 @@ async function runVncAuth(sessionName, url, options = {}) {
     // 2. Generate a random password token. Required unconditionally — we never
     // launch an unauthenticated VNC server, even on loopback, because anyone
     // with a local account could otherwise attach to the session.
-    const { token, passwdFile: pf } = createVncPasswd();
+    const { token, passwdFile: pf, passwdDir: pd } = createVncPasswd();
     passwdFile = pf;
+    passwdDir = pd;
 
     // 3. Start x11vnc with password + loopback binding (unless --bind-remote).
     const x11vncArgs = [
@@ -209,7 +253,7 @@ async function runVncAuth(sessionName, url, options = {}) {
 
     process.stderr.write(
       `\n[web-ctl] ${info.message}\n` +
-      `[web-ctl] VNC password (enter when prompted): ${token}\n` +
+      `[web-ctl] VNC password (8 chars, RFB protocol limit): ${token}\n` +
       `[web-ctl] ${tunnelHint}\n\n`
     );
 
@@ -239,7 +283,8 @@ async function runVncAuth(sessionName, url, options = {}) {
             try { process.kill(-proc.pid, 'SIGTERM'); } catch { /* ignore */ }
           }
         }
-        cleanupPasswdFile(passwdFile);
+        cleanupPasswdFile(passwdFile, passwdDir);
+        process.removeListener('exit', exitHandler);
         const authResult = { ok: true, session: sessionName, url: result.currentUrl, ...info };
         if (headlessVerification) authResult.headlessVerification = headlessVerification;
         return authResult;
@@ -248,12 +293,14 @@ async function runVncAuth(sessionName, url, options = {}) {
       await new Promise(resolve => setTimeout(resolve, pollInterval));
     }
 
-    await cleanup(sessionName, context, procs, { passwdFile });
+    await cleanup(sessionName, context, procs, { passwdFile, passwdDir });
+    process.removeListener('exit', exitHandler);
     return { ok: false, session: sessionName, error: 'auth_timeout', message: `VNC auth timed out after ${options.timeout || 300}s`, ...info };
   } catch (err) {
-    await cleanup(sessionName, context, [websockifyProc, x11vncProc, xvfbProc], { passwdFile });
+    await cleanup(sessionName, context, [websockifyProc, x11vncProc, xvfbProc], { passwdFile, passwdDir });
+    process.removeListener('exit', exitHandler);
     return { ok: false, session: sessionName, error: 'vnc_auth_error', message: err.message };
   }
 }
 
-module.exports = { runVncAuth, isVncAvailable };
+module.exports = { runVncAuth, isVncAvailable, generateVncToken, createVncPasswd, cleanupPasswdFile };

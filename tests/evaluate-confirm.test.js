@@ -50,6 +50,38 @@ describe('evaluate confirm hash', () => {
     assert.notEqual(a, b);
   });
 
+  it('error messages do not leak the expected hash value', async () => {
+    // Regression guard: a previous version of confirmEvaluate embedded the
+    // expected hash in the "missing env var" error, which let a prompt-
+    // injected caller just copy the value and defeat the check.
+    const { describe: _d } = { describe };
+    void _d; // keep lint quiet
+    process.env.WEB_CTL_ALLOW_EVALUATE = '1';
+    delete process.env.WEB_CTL_EVALUATE_CONFIRM;
+    delete require.cache[require.resolve('../scripts/web-ctl')];
+    const webCtl = require('../scripts/web-ctl');
+    // confirmEvaluate isn't exported; re-require module and stub stdin.isTTY
+    // path by calling the non-TTY branch directly via env. We assert via a
+    // monkey-patch on module internals is fragile, so instead assert by
+    // computing the hash ourselves and spot-checking the error string from
+    // a simulated throw. Since confirmEvaluate is internal, we verify the
+    // contract at the README level: recompute sha256(code).slice(0,16).
+    const code = 'document.title';
+    const expected = computeConfirm(code);
+    assert.match(expected, /^[0-9a-f]{16}$/);
+    // No runtime-visible assertion possible without running the CLI;
+    // the regression guarantee is structural: grep the source file.
+    const fs = require('fs');
+    const src = fs.readFileSync(require.resolve('../scripts/web-ctl'), 'utf8');
+    assert.ok(
+      !/Expected:\s+\$\{expected\}/.test(src),
+      'confirmEvaluate must not interpolate `expected` into user-facing error strings'
+    );
+    // And the new message must mention recomputing it.
+    assert.match(src, /Compute it yourself|Recompute sha256/);
+    void webCtl;
+  });
+
   it('matches the reference value for a known input', () => {
     // Lock the exact prefix so external tooling can pre-compute hashes.
     const expected = crypto

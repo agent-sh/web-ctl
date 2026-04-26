@@ -72,6 +72,33 @@ describe('isPrivateIpv6', () => {
     assert.equal(isPrivateIpv6('2606:4700:4700::1111'), false); // cloudflare
     assert.equal(isPrivateIpv6('2001:4860:4860::8888'), false); // google
   });
+
+  it('flags IPv4-mapped IPv6 in HEX form (URL parser normalization bypass)', () => {
+    // ::ffff:7f00:1 is the hex form of ::ffff:127.0.0.1 — before the fix
+    // the regex only matched dotted form and this slipped through.
+    assert.equal(isPrivateIpv6('::ffff:7f00:1'), true);
+    assert.equal(isPrivateIpv6('::ffff:7f00:0001'), true);
+    // 169.254.169.254 = 0xa9fe:0xa9fe
+    assert.equal(isPrivateIpv6('::ffff:a9fe:a9fe'), true);
+    // 10.0.0.1 = 0x0a00:0x0001
+    assert.equal(isPrivateIpv6('::ffff:a00:1'), true);
+    // Public IPv4 in hex form should NOT trip: 8.8.8.8 = 0x0808:0x0808
+    assert.equal(isPrivateIpv6('::ffff:808:808'), false);
+  });
+
+  it('flags fec0::/10 deprecated site-local', () => {
+    assert.equal(isPrivateIpv6('fec0::1'), true);
+    assert.equal(isPrivateIpv6('feff::1'), true);
+  });
+
+  it('flags 100::/64 discard prefix', () => {
+    assert.equal(isPrivateIpv6('100::1'), true);
+  });
+
+  it('flags 2001:db8::/32 documentation prefix', () => {
+    assert.equal(isPrivateIpv6('2001:db8::1'), true);
+    assert.equal(isPrivateIpv6('2001:0db8:1234::1'), true);
+  });
 });
 
 describe('assertUrlAllowed', () => {
