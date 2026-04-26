@@ -31,9 +31,129 @@ function validateSessionName(name) {
   }
 }
 
+// Hostnames that resolve to cloud metadata endpoints; rejected before DNS.
+const METADATA_HOSTS = new Set([
+  'metadata.google.internal',
+  'metadata',
+  'instance-data',
+  'instance-data.ec2.internal',
+]);
+
+function ipv4ToInt(ip) {
+  const parts = ip.split('.').map(n => parseInt(n, 10));
+  if (parts.length !== 4 || parts.some(n => isNaN(n) || n < 0 || n > 255)) return null;
+  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+}
+
+function ipv4InCidr(ip, cidr) {
+  const [base, bitsStr] = cidr.split('/');
+  const bits = parseInt(bitsStr, 10);
+  const ipInt = ipv4ToInt(ip);
+  const baseInt = ipv4ToInt(base);
+  if (ipInt === null || baseInt === null) return false;
+  if (bits === 0) return true;
+  const mask = (~0 << (32 - bits)) >>> 0;
+  return (ipInt & mask) === (baseInt & mask);
+}
+
+const IPV4_PRIVATE_CIDRS = [
+  '10.0.0.0/8',
+  '172.16.0.0/12',
+  '192.168.0.0/16',
+  '127.0.0.0/8',
+  '169.254.0.0/16',
+  '0.0.0.0/8',
+];
+
+function isPrivateIpv4(ip) {
+  return IPV4_PRIVATE_CIDRS.some(cidr => ipv4InCidr(ip, cidr));
+}
+
+function isPrivateIpv6(ip) {
+  const lower = ip.toLowerCase();
+  if (lower === '::1' || lower === '::') return true;
+  // fc00::/7  (unique local)
+  if (/^f[cd][0-9a-f]{2}:/i.test(lower)) return true;
+  // fe80::/10 (link-local)
+  if (/^fe[89ab][0-9a-f]:/i.test(lower)) return true;
+  // IPv4-mapped IPv6: ::ffff:a.b.c.d — check mapped v4
+  const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+  if (mapped) return isPrivateIpv4(mapped[1]);
+  return false;
+}
+
+/**
+ * Validate a URL string, synchronously checking scheme.
+ *
+ * This function stays sync for backward compat with all existing call sites.
+ * SSRF denylist checks (DNS-based) live in assertUrlAllowed below; call that
+ * from async contexts for full validation.
+ */
 function validateUrl(url) {
   if (!url || !ALLOWED_SCHEMES.test(url)) {
     throw new Error(`Invalid URL scheme. Only http:// and https:// URLs are allowed. Got: ${url}`);
+  }
+}
+
+/**
+ * Full URL validation including SSRF denylist.
+ * Resolves the hostname via DNS and rejects private / loopback / link-local
+ * / cloud-metadata addresses. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to opt out
+ * (useful for local dev against localhost or a private staging server).
+ */
+async function assertUrlAllowed(url) {
+  validateUrl(url);
+  if (process.env.WEB_CTL_ALLOW_PRIVATE_NETWORK === '1') return;
+
+  let parsed;
+  try { parsed = new URL(url); } catch {
+    throw new Error(`Invalid URL: ${url}`);
+  }
+
+  let host = parsed.hostname;
+  // Strip brackets from IPv6 literals
+  if (host.startsWith('[') && host.endsWith(']')) host = host.slice(1, -1);
+  const lowerHost = host.toLowerCase();
+
+  if (METADATA_HOSTS.has(lowerHost)) {
+    throw new Error(`Blocked cloud metadata hostname: ${host}. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to override.`);
+  }
+
+  // Fast-path: if host is already an IP literal, check directly without DNS.
+  const net = require('net');
+  const family = net.isIP(host);
+  if (family === 4) {
+    if (isPrivateIpv4(host)) {
+      throw new Error(`Blocked private/loopback IPv4 address: ${host}. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to override.`);
+    }
+    return;
+  }
+  if (family === 6) {
+    if (isPrivateIpv6(host)) {
+      throw new Error(`Blocked private/loopback IPv6 address: ${host}. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to override.`);
+    }
+    return;
+  }
+
+  // Otherwise resolve via DNS. If DNS itself fails (ENOTFOUND, offline, etc.)
+  // we don't turn that into an SSRF rejection — the real network call will
+  // fail naturally and give the caller a proper error. We only reject when
+  // DNS succeeds and returns a private/loopback address.
+  const dns = require('dns').promises;
+  let addresses;
+  try {
+    addresses = await dns.lookup(host, { all: true });
+  } catch {
+    return;
+  }
+
+  for (const { address, family: f } of addresses) {
+    if (f === 4 && isPrivateIpv4(address)) {
+      throw new Error(`Host ${host} resolves to private/loopback address ${address}. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to override.`);
+    }
+    if (f === 6 && isPrivateIpv6(address)) {
+      throw new Error(`Host ${host} resolves to private/loopback IPv6 ${address}. Set WEB_CTL_ALLOW_PRIVATE_NETWORK=1 to override.`);
+    }
   }
 }
 
@@ -737,7 +857,7 @@ async function sessionAuth(name, opts) {
     return;
   }
 
-  try { validateUrl(resolved.url); } catch (err) {
+  try { await assertUrlAllowed(resolved.url); } catch (err) {
     output({ ok: false, command: 'session auth', session: name, error: 'invalid_url', message: err.message });
     return;
   }
@@ -849,7 +969,7 @@ async function sessionVerify(name, opts) {
     return;
   }
 
-  try { validateUrl(url); } catch (err) {
+  try { await assertUrlAllowed(url); } catch (err) {
     output({ ok: false, command: 'session verify', session: name, error: 'invalid_url', message: err.message });
     return;
   }
@@ -1058,7 +1178,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
 
     if (action !== 'goto' && session.lastUrl && session.lastUrl !== 'about:blank') {
       try {
-        validateUrl(session.lastUrl);
+        await assertUrlAllowed(session.lastUrl);
         await page.goto(session.lastUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
       } catch { /* ignore - best effort restoration */ }
     }
@@ -1071,7 +1191,7 @@ async function runAction(sessionName, action, actionArgs, opts) {
       case 'goto': {
         const url = actionArgs[0];
         if (!url) throw new Error('URL required: run <session> goto <url>');
-        validateUrl(url);
+        await assertUrlAllowed(url);
         const parsedTimeout = opts.timeout ? parseInt(opts.timeout, 10) : NaN;
         const loadedTimeout = parsedTimeout > 0 ? parsedTimeout : 15000;
         const response = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -1641,7 +1761,16 @@ async function main() {
   }
 }
 
-main().catch(err => {
-  output({ ok: false, error: 'fatal', message: err.message });
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(err => {
+    output({ ok: false, error: 'fatal', message: err.message });
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  validateUrl,
+  assertUrlAllowed,
+  isPrivateIpv4,
+  isPrivateIpv6,
+};

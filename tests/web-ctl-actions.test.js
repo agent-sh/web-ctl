@@ -597,8 +597,8 @@ describe('web-ctl navigation state persistence', () => {
 
   it('validates lastUrl before restoring', () => {
     assert.ok(
-      webCtlSource.includes("validateUrl(session.lastUrl)"),
-      'web-ctl.js must validate lastUrl scheme before navigating'
+      webCtlSource.includes("assertUrlAllowed(session.lastUrl)"),
+      'web-ctl.js must validate lastUrl scheme + SSRF denylist before navigating'
     );
   });
 
