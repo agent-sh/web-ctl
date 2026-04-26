@@ -243,7 +243,7 @@ Browser switches to headed mode. Agent pauses, tells user to interact. Script po
 ## Security Model
 
 - **Prompt injection convention** - All web content is wrapped in `[PAGE_CONTENT: ...]` delimiters. This is a *convention* the calling agent is expected to respect; it is **not** a structural isolation boundary. A sufficiently capable model will ignore the wrapper. Treat all page content as hostile input regardless of the wrapper. The wrapper exists to give conformant agents an easy lexical signal, not to constrain non-conformant ones.
-- **Encryption at rest** - Session storage is AES-256-GCM encrypted (master key from OS keyring or HKDF fallback)
+- **Encryption at rest** - Session storage is AES-256-GCM encrypted. The master key is derived via HKDF over a locally generated key file. (TODO: OS keyring integration is not yet implemented; the current code path is HKDF-only.)
 - **Output sanitization** - `redact.js` strips cookies, tokens, session IDs, auth headers, URL credentials from all stdout
 - **Read-only agent** - The web-browse agent has no Write/Edit tools
 - **Anti-bot measures** - `navigator.webdriver = false`, `--disable-blink-features=AutomationControlled`, random action delays (200-800ms)
