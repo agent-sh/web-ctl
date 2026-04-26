@@ -155,6 +155,63 @@ describe('redactSecrets', () => {
     assert.equal(redactSecrets(text), expected);
   });
 
+  it('redacts bare JWT tokens', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+    const result = redactSecrets(`Token: ${jwt} next`);
+    assert.ok(result.includes('[REDACTED]'));
+    assert.ok(!result.includes('eyJhbGc'));
+  });
+
+  it('redacts AWS access keys (AKIA)', () => {
+    const result = redactSecrets('key AKIAIOSFODNN7EXAMPLE here');
+    assert.ok(result.includes('[REDACTED]'));
+    assert.ok(!result.includes('AKIAIOSFODNN7EXAMPLE'));
+  });
+
+  it('redacts AWS temp keys (ASIA)', () => {
+    const result = redactSecrets('key ASIAIOSFODNN7EXAMPLE here');
+    assert.ok(result.includes('[REDACTED]'));
+  });
+
+  it('redacts GitHub personal access tokens (ghp_)', () => {
+    const tok = 'ghp_' + 'A'.repeat(36);
+    const result = redactSecrets(`token=${tok}`);
+    assert.ok(!result.includes(tok));
+  });
+
+  it('redacts GitHub oauth tokens (gho_/ghs_/ghu_)', () => {
+    for (const prefix of ['gho_', 'ghs_', 'ghu_']) {
+      const tok = prefix + 'B'.repeat(36);
+      const result = redactSecrets(`auth: ${tok}`);
+      assert.ok(!result.includes(tok), `should redact ${prefix}`);
+    }
+  });
+
+  it('redacts GitLab PATs (glpat-)', () => {
+    const tok = 'glpat-abcdefghij1234567890';
+    const result = redactSecrets(`gitlab: ${tok}`);
+    assert.ok(!result.includes(tok));
+  });
+
+  it('redacts OpenAI keys (sk-)', () => {
+    const tok = 'sk-' + 'A'.repeat(48);
+    const result = redactSecrets(`key=${tok}`);
+    assert.ok(!result.includes(tok));
+  });
+
+  it('redacts Anthropic keys (sk-ant-) before OpenAI match', () => {
+    const tok = 'sk-ant-' + 'Z'.repeat(60);
+    const result = redactSecrets(`x ${tok} y`);
+    assert.ok(!result.includes(tok));
+    assert.ok(result.includes('[REDACTED]'));
+  });
+
+  it('does not over-redact short sk- sequences', () => {
+    // 19 chars after sk- should not match (floor is 20)
+    const text = 'sk-short12345678901';
+    assert.equal(redactSecrets(text), text);
+  });
+
   it('preserves multiline ARIA snapshots', () => {
     const text = [
       'link "Home" https://example.com/home',
